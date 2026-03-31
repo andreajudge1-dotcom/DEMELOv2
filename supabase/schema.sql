@@ -97,6 +97,7 @@ create table if not exists exercises (
   difficulty         text check (difficulty in ('beginner', 'intermediate', 'advanced')),
   default_cue        text,
   video_url          text,
+  custom_cue         text,
   parent_exercise_id uuid references exercises(id) on delete set null,
   is_global          boolean default false,
   created_at         timestamptz default now()
@@ -148,6 +149,7 @@ create table if not exists training_cycles (
   num_days        int not null default 4,
   num_weeks       int not null default 4,
   is_template     boolean default false,
+  tags            text[] default '{}',
   created_at      timestamptz default now()
 );
 
@@ -253,12 +255,14 @@ create policy "Client reads assigned workouts"
 --    Ordered list of exercises within a workout day.
 -- ---------------------------------------------------------------------------
 create table if not exists workout_exercises (
-  id          uuid primary key default gen_random_uuid(),
-  workout_id  uuid not null references workouts(id) on delete cascade,
-  exercise_id uuid references exercises(id) on delete set null,
-  position    int not null default 0,
-  notes       text,
-  created_at  timestamptz default now()
+  id            uuid primary key default gen_random_uuid(),
+  workout_id    uuid not null references workouts(id) on delete cascade,
+  exercise_id   uuid references exercises(id) on delete set null,
+  position      int not null default 0,
+  is_unilateral boolean default false,
+  per_side      boolean default false,
+  notes         text,
+  created_at    timestamptz default now()
 );
 
 alter table workout_exercises enable row level security;
@@ -439,7 +443,7 @@ create policy "Client reads own session exercises"
 create table if not exists session_sets (
   id                  uuid primary key default gen_random_uuid(),
   session_exercise_id uuid not null references session_exercises(id) on delete cascade,
-  prescribed_set_id   uuid references exercise_sets(id) on delete set null,
+  prescribed_set_id   uuid references workout_set_prescriptions(id) on delete set null,
   set_number          int not null,
   reps_completed      int,
   weight_kg           numeric,

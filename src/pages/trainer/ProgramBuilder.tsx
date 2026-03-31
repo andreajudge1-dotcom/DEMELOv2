@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import ExercisePicker from '../../components/ExercisePicker'
 import SetPrescriptionEditor from '../../components/SetPrescriptionEditor'
 import type { SetPrescription } from '../../components/SetPrescriptionEditor'
+import Select from '../../components/Select'
 
 interface Client {
   id: string
@@ -59,6 +60,8 @@ export default function ProgramBuilder() {
   const { id: editProgramId } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const preselectedClientId = searchParams.get('clientId')
+  const fromTemplate = searchParams.get('from') === 'template'
+  const templateId = searchParams.get('templateId')
 
   const [clients, setClients] = useState<Client[]>([])
   const [form, setForm] = useState({
@@ -69,6 +72,7 @@ export default function ProgramBuilder() {
     coverPhotoUrl: COVER_OPTIONS[0],
     isTemplate: false,
     assignToClientId: preselectedClientId ?? '',
+    tags: [] as string[],
   })
   const [step, setStep] = useState<'setup' | 'builder'>('setup')
   const [programId, setProgramId] = useState<string | null>(editProgramId ?? null)
@@ -81,14 +85,17 @@ export default function ProgramBuilder() {
 
   // Exercise picker
   const [showPicker, setShowPicker] = useState(false)
+  const [showCoverPicker, setShowCoverPicker] = useState(false)
 
   useEffect(() => { fetchClients() }, [])
 
   useEffect(() => {
     if (editProgramId) {
       loadExistingProgram(editProgramId)
+    } else if (fromTemplate && templateId) {
+      loadTemplate(templateId)
     }
-  }, [editProgramId])
+  }, [editProgramId, templateId])
 
   async function fetchClients() {
     const { data } = await supabase
@@ -116,10 +123,110 @@ export default function ProgramBuilder() {
       coverPhotoUrl: cycle.cover_photo_url ?? COVER_OPTIONS[0],
       isTemplate: cycle.is_template,
       assignToClientId: '',
+      tags: cycle.tags ?? [],
     })
     setProgramId(pid)
     await loadDays(pid, cycle.num_days)
     setStep('builder')
+  }
+
+  async function loadTemplate(tid: string) {
+    setSaving(true)
+
+    // 1. Fetch the template cycle
+    const { data: cycle } = await supabase
+      .from('training_cycles')
+      .select('*')
+      .eq('id', tid)
+      .single()
+    if (!cycle) { setSaving(false); return }
+
+    // 2. Create a new cycle as a copy
+    const { data: newCycle } = await supabase
+      .from('training_cycles')
+      .insert({
+        trainer_id: profile?.id,
+        name: cycle.name + ' (copy)',
+        description: cycle.description ?? null,
+        cover_photo_url: cycle.cover_photo_url ?? null,
+        num_days: cycle.num_days,
+        num_weeks: cycle.num_weeks ?? 4,
+        is_template: false,
+        tags: cycle.tags ?? [],
+      })
+      .select()
+      .single()
+    if (!newCycle) { setSaving(false); return }
+
+    // 3. Fetch template workouts
+    const { data: workouts } = await supabase
+      .from('workouts')
+      .select('id, day_number, name, focus')
+      .eq('cycle_id', tid)
+      .order('day_number')
+
+    // 4. Deep copy each workout + exercises + sets
+    for (const w of workouts ?? []) {
+      const { data: newWorkout } = await supabase
+        .from('workouts')
+        .insert({ cycle_id: newCycle.id, day_number: w.day_number, name: w.name, focus: w.focus ?? null })
+        .select()
+        .single()
+      if (!newWorkout) continue
+
+      const { data: wes } = await supabase
+        .from('workout_exercises')
+        .select('id, exercise_id, position, notes')
+        .eq('workout_id', w.id)
+        .order('position')
+
+      for (const we of wes ?? []) {
+        const { data: newWE } = await supabase
+          .from('workout_exercises')
+          .insert({ workout_id: newWorkout.id, exercise_id: we.exercise_id, position: we.position, notes: we.notes ?? null })
+          .select()
+          .single()
+        if (!newWE) continue
+
+        const { data: sets } = await supabase
+          .from('workout_set_prescriptions')
+          .select('*')
+          .eq('workout_exercise_id', we.id)
+          .order('set_number')
+
+        if (sets?.length) {
+          await supabase.from('workout_set_prescriptions').insert(
+            sets.map(s => ({
+              workout_exercise_id: newWE.id,
+              set_number: s.set_number,
+              set_type: s.set_type,
+              reps: s.reps ?? null,
+              rpe_target: s.rpe_target ?? null,
+              load_modifier: s.load_modifier ?? null,
+              hold_seconds: s.hold_seconds ?? null,
+              tempo: s.tempo ?? null,
+              cue: s.cue ?? null,
+            }))
+          )
+        }
+      }
+    }
+
+    // 5. Update local form + load into builder
+    setForm({
+      name: newCycle.name,
+      description: newCycle.description ?? '',
+      numWeeks: newCycle.num_weeks ?? 4,
+      numDays: newCycle.num_days,
+      coverPhotoUrl: newCycle.cover_photo_url ?? COVER_OPTIONS[0],
+      isTemplate: false,
+      assignToClientId: preselectedClientId ?? '',
+      tags: newCycle.tags ?? [],
+    })
+    setProgramId(newCycle.id)
+    await loadDays(newCycle.id, newCycle.num_days)
+    setStep('builder')
+    setSaving(false)
   }
 
   async function loadDays(pid: string, numDays: number) {
@@ -199,6 +306,7 @@ export default function ProgramBuilder() {
         num_days: form.numDays,
         num_weeks: form.numWeeks,
         is_template: form.isTemplate,
+        tags: form.tags,
       })
       .select()
       .single()
@@ -381,27 +489,21 @@ export default function ProgramBuilder() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="font-barlow text-xs text-white/40 uppercase tracking-widest block mb-2">Days per week</label>
-              <select
-                value={form.numDays}
-                onChange={e => setForm(f => ({ ...f, numDays: Number(e.target.value) }))}
-                className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-4 py-3 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors"
-              >
-                {[2, 3, 4, 5, 6].map(n => (
-                  <option key={n} value={n}>{n} days</option>
-                ))}
-              </select>
+              <Select
+                value={String(form.numDays)}
+                onChange={val => setForm(f => ({ ...f, numDays: Number(val) }))}
+                options={[2, 3, 4, 5, 6].map(n => ({ value: String(n), label: `${n} days` }))}
+                className="w-full"
+              />
             </div>
             <div>
               <label className="font-barlow text-xs text-white/40 uppercase tracking-widest block mb-2">Duration (weeks)</label>
-              <select
-                value={form.numWeeks}
-                onChange={e => setForm(f => ({ ...f, numWeeks: Number(e.target.value) }))}
-                className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-4 py-3 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors"
-              >
-                {[2, 3, 4, 6, 8, 10, 12, 16].map(n => (
-                  <option key={n} value={n}>{n} weeks</option>
-                ))}
-              </select>
+              <Select
+                value={String(form.numWeeks)}
+                onChange={val => setForm(f => ({ ...f, numWeeks: Number(val) }))}
+                options={[2, 3, 4, 6, 8, 10, 12, 16].map(n => ({ value: String(n), label: `${n} weeks` }))}
+                className="w-full"
+              />
             </div>
           </div>
 
@@ -426,18 +528,43 @@ export default function ProgramBuilder() {
           {clients.length > 0 && (
             <div>
               <label className="font-barlow text-xs text-white/40 uppercase tracking-widest block mb-2">Assign to client (optional)</label>
-              <select
+              <Select
                 value={form.assignToClientId}
-                onChange={e => setForm(f => ({ ...f, assignToClientId: e.target.value }))}
-                className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-4 py-3 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors"
-              >
-                <option value="">No client — save as standalone</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.full_name}</option>
-                ))}
-              </select>
+                onChange={val => setForm(f => ({ ...f, assignToClientId: val }))}
+                placeholder="No client — save as standalone"
+                options={clients.map(c => ({ value: c.id, label: c.full_name }))}
+                className="w-full"
+              />
             </div>
           )}
+
+          {/* Tags */}
+          <div>
+            <label className="font-barlow text-xs text-white/40 uppercase tracking-widest block mb-2">
+              Program tags
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {['Strength','Hypertrophy','Power','Conditioning','Beginner','Fat Loss','Sport Specific','Rehab'].map(tag => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => setForm(f => ({
+                    ...f,
+                    tags: f.tags.includes(tag)
+                      ? f.tags.filter(t => t !== tag)
+                      : [...f.tags, tag]
+                  }))}
+                  className={`px-3 py-1.5 rounded-full font-barlow text-xs font-semibold transition-colors border ${
+                    form.tags.includes(tag)
+                      ? 'bg-[#C9A84C] text-black border-[#C9A84C]'
+                      : 'bg-transparent text-white/40 border-[#2C2C2E] hover:border-[#C9A84C] hover:text-white'
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Save as template */}
           <div className="flex items-center gap-3">
@@ -476,8 +603,50 @@ export default function ProgramBuilder() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/trainer/programs')} className="font-barlow text-sm text-white/40 hover:text-white">← Programs</button>
+
+          {/* Cover photo thumbnail — click to change */}
+          <div className="relative">
+            <div
+              onClick={() => setShowCoverPicker(v => !v)}
+              className="w-12 h-12 rounded-lg bg-cover bg-center cursor-pointer border-2 border-transparent hover:border-[#C9A84C] transition-colors flex-shrink-0"
+              style={{ backgroundImage: `url(${form.coverPhotoUrl})` }}
+              title="Change cover photo"
+            />
+            {showCoverPicker && (
+              <div className="absolute left-0 top-full mt-2 z-30 bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl p-3 grid grid-cols-3 gap-2 shadow-xl w-56">
+                {COVER_OPTIONS.map(url => (
+                  <div
+                    key={url}
+                    onClick={async () => {
+                      setForm(f => ({ ...f, coverPhotoUrl: url }))
+                      setShowCoverPicker(false)
+                      if (programId) {
+                        await supabase.from('training_cycles').update({ cover_photo_url: url }).eq('id', programId)
+                      }
+                    }}
+                    className={`h-14 rounded-lg bg-cover bg-center cursor-pointer border-2 transition-colors ${
+                      form.coverPhotoUrl === url ? 'border-[#C9A84C]' : 'border-transparent hover:border-[#C9A84C]/50'
+                    }`}
+                    style={{ backgroundImage: `url(${url})` }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
           <div>
-            <h1 className="font-bebas text-3xl text-white tracking-wide">{form.name}</h1>
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              onBlur={async () => {
+                if (programId && form.name.trim()) {
+                  await supabase.from('training_cycles').update({ name: form.name.trim() }).eq('id', programId)
+                }
+              }}
+              className="font-bebas text-3xl text-white tracking-wide bg-transparent border-b border-transparent focus:border-[#C9A84C] focus:outline-none transition-colors w-80 placeholder:text-white/20"
+              placeholder="Program name"
+            />
             <p className="font-barlow text-xs text-white/30 mt-0.5">{form.numDays} days/week · {form.numWeeks} weeks</p>
           </div>
         </div>

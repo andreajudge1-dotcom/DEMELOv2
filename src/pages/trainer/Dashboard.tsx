@@ -65,7 +65,17 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="max-w-6xl">
+    <div className="max-w-6xl relative">
+      {/* Full bleed faded background */}
+      <div
+        className="fixed inset-0 ml-64 z-0 pointer-events-none"
+        style={{
+          backgroundImage: 'url(https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1600&q=80)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.04,
+        }}
+      />
       {/* Header */}
       <div className="mb-8">
         <h1 className="font-bebas text-4xl text-white tracking-wide">
