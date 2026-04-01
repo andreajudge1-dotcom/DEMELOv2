@@ -47,8 +47,6 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
   const [search, setSearch] = useState('')
   const [muscleFilter, setMuscleFilter] = useState('All')
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [editingCueId, setEditingCueId] = useState<string | null>(null)
-  const [cueValue, setCueValue] = useState('')
 
   useEffect(() => {
     fetchExercises()
@@ -62,17 +60,6 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
       .order('name')
     setExercises(data ?? [])
     setLoading(false)
-  }
-
-  async function saveCue(exerciseId: string) {
-    await supabase
-      .from('exercises')
-      .update({ custom_cue: cueValue })
-      .eq('id', exerciseId)
-    setExercises(prev => prev.map(e =>
-      e.id === exerciseId ? { ...e, custom_cue: cueValue } : e
-    ))
-    setEditingCueId(null)
   }
 
   const filtered = exercises.filter(ex => {
@@ -141,7 +128,6 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
             <div className="flex flex-col gap-1.5">
               {filtered.map(ex => {
                 const isExpanded = expandedId === ex.id
-                const isEditing = editingCueId === ex.id
                 const cue = ex.custom_cue || ex.default_cue
 
                 return (
@@ -154,10 +140,7 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
                     {/* Main row — click to expand */}
                     <div
                       className="flex items-center gap-3 px-4 py-3 cursor-pointer"
-                      onClick={() => {
-                        setExpandedId(isExpanded ? null : ex.id)
-                        setEditingCueId(null)
-                      }}
+                      onClick={() => setExpandedId(isExpanded ? null : ex.id)}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -221,50 +204,18 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
                           </div>
                         )}
 
-                        {/* Coaching cue */}
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="font-barlow text-xs text-white/40 uppercase tracking-widest">
-                              {ex.custom_cue ? 'Your coaching cue' : 'Default coaching cue'}
+                        {/* Library cue — read only */}
+                        {cue && (
+                          <div className="mb-4">
+                            <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mb-2">
+                              Library cue
+                              <span className="ml-2 normal-case text-white/20">(edit in program builder after adding)</span>
                             </p>
-                            {!isEditing ? (
-                              <button
-                                onClick={e => { e.stopPropagation(); setEditingCueId(ex.id); setCueValue(cue ?? '') }}
-                                className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070]"
-                              >
-                                {ex.custom_cue ? 'Edit cue' : 'Add your cue'}
-                              </button>
-                            ) : (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={e => { e.stopPropagation(); setEditingCueId(null) }}
-                                  className="font-barlow text-xs text-white/40"
-                                >
-                                  Cancel
-                                </button>
-                                <button
-                                  onClick={e => { e.stopPropagation(); saveCue(ex.id) }}
-                                  className="font-barlow text-xs text-[#C9A84C]"
-                                >
-                                  Save
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          {isEditing ? (
-                            <textarea
-                              value={cueValue}
-                              onChange={e => setCueValue(e.target.value)}
-                              onClick={e => e.stopPropagation()}
-                              rows={3}
-                              className="w-full bg-[#2C2C2E] border border-[#C9A84C] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none resize-none"
-                            />
-                          ) : (
-                            <div className={`border-l-2 ${ex.custom_cue ? 'border-[#2A7A2A]' : 'border-[#C9A84C]'} pl-3 py-1`}>
-                              <p className="font-barlow text-sm text-white/60 leading-relaxed">{cue || '—'}</p>
+                            <div className={`border-l-2 ${ex.custom_cue ? 'border-[#2A7A2A]' : 'border-[#C9A84C]/40'} pl-3 py-1`}>
+                              <p className="font-barlow text-sm text-white/50 leading-relaxed">{cue}</p>
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
                         {/* Add to day button */}
                         <button

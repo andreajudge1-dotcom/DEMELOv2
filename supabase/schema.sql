@@ -262,6 +262,7 @@ create table if not exists workout_exercises (
   is_unilateral   boolean default false,
   per_side        boolean default false,
   superset_group  text default null,
+  cue_override    text,
   notes           text,
   created_at      timestamptz default now()
 );

@@ -21,6 +21,7 @@ interface WorkoutExercise {
   per_side: boolean
   superset_group: string | null
   position: number
+  cue_override: string
   notes: string
   sets: SetPrescription[]
 }
@@ -177,14 +178,14 @@ export default function ProgramBuilder() {
 
       const { data: wes } = await supabase
         .from('workout_exercises')
-        .select('id, exercise_id, position, superset_group, notes')
+        .select('id, exercise_id, position, superset_group, cue_override, notes')
         .eq('workout_id', w.id)
         .order('position')
 
       for (const we of wes ?? []) {
         const { data: newWE } = await supabase
           .from('workout_exercises')
-          .insert({ workout_id: newWorkout.id, exercise_id: we.exercise_id, position: we.position, superset_group: (we as any).superset_group ?? null, notes: we.notes ?? null })
+          .insert({ workout_id: newWorkout.id, exercise_id: we.exercise_id, position: we.position, superset_group: (we as any).superset_group ?? null, cue_override: (we as any).cue_override ?? null, notes: we.notes ?? null })
           .select()
           .single()
         if (!newWE) continue
@@ -250,7 +251,7 @@ export default function ProgramBuilder() {
       if (workout?.id) {
         const { data: weData } = await supabase
           .from('workout_exercises')
-          .select('id, exercise_id, position, notes, superset_group, exercises(name, is_unilateral, per_side)')
+          .select('id, exercise_id, position, notes, cue_override, superset_group, exercises(name, is_unilateral, per_side)')
           .eq('workout_id', workout.id)
           .order('position')
 
@@ -270,6 +271,7 @@ export default function ProgramBuilder() {
             per_side: exInfo?.per_side ?? false,
             superset_group: (we as any).superset_group ?? null,
             position: we.position,
+            cue_override: (we as any).cue_override ?? '',
             notes: we.notes ?? '',
             sets: (setsData ?? [])
               .filter(s => s.workout_exercise_id === we.id)
@@ -366,11 +368,19 @@ export default function ProgramBuilder() {
               exercise_id: exercise.exercise_id || null,
               position: exercise.position,
               superset_group: exercise.superset_group ?? null,
+              cue_override: exercise.cue_override || null,
               notes: exercise.notes || null,
             })
             .select()
             .single()
           workoutExerciseId = exData?.id ?? null
+        } else {
+          await supabase.from('workout_exercises').update({
+            position: exercise.position,
+            superset_group: exercise.superset_group ?? null,
+            cue_override: exercise.cue_override || null,
+            notes: exercise.notes || null,
+          }).eq('id', workoutExerciseId)
         }
 
         if (!workoutExerciseId) continue
@@ -429,6 +439,7 @@ export default function ProgramBuilder() {
         per_side: ex.per_side ?? false,
         superset_group: null,
         position: d.exercises.length,
+        cue_override: '',
         notes: '',
         sets: [makeDefaultSet(1)],
       }
@@ -765,6 +776,28 @@ export default function ProgramBuilder() {
                                 <button onClick={() => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.filter((_, ei) => ei !== gIdx) } : d))} className="font-barlow text-xs text-white/20 hover:text-[#E05555] ml-1">Remove</button>
                               </div>
                               <SetPrescriptionEditor sets={gex.sets} isUnilateral={gex.is_unilateral} perSide={gex.per_side} onChange={(updatedSets) => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((e, ei) => ei === gIdx ? { ...e, sets: updatedSets } : e) } : d))} />
+                              <div className="mt-3 pt-3 border-t border-[#C9A84C]/10 flex flex-col gap-2">
+                                <div>
+                                  <p className="font-barlow text-xs text-white/30 uppercase tracking-widest mb-1">Program cue</p>
+                                  <textarea
+                                    placeholder="Override the library cue for this program only..."
+                                    value={gex.cue_override}
+                                    onChange={e => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((ex2, ei) => ei === gIdx ? { ...ex2, cue_override: e.target.value } : ex2) } : d))}
+                                    rows={2}
+                                    className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-xs placeholder:text-white/15 focus:outline-none focus:border-[#C9A84C] transition-colors resize-none"
+                                  />
+                                </div>
+                                <div>
+                                  <p className="font-barlow text-xs text-white/30 uppercase tracking-widest mb-1">Notes</p>
+                                  <textarea
+                                    placeholder="Exercise notes for this program..."
+                                    value={gex.notes}
+                                    onChange={e => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((ex2, ei) => ei === gIdx ? { ...ex2, notes: e.target.value } : ex2) } : d))}
+                                    rows={2}
+                                    className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-xs placeholder:text-white/15 focus:outline-none focus:border-[#C9A84C] transition-colors resize-none"
+                                  />
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -782,6 +815,28 @@ export default function ProgramBuilder() {
                           <button onClick={() => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.filter((_, ei) => ei !== i) } : d))} className="font-barlow text-xs text-white/20 hover:text-[#E05555]">Remove</button>
                         </div>
                         <SetPrescriptionEditor sets={ex.sets} isUnilateral={ex.is_unilateral} perSide={ex.per_side} onChange={(updatedSets) => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((e, ei) => ei === i ? { ...e, sets: updatedSets } : e) } : d))} />
+                        <div className="mt-3 pt-3 border-t border-[#2C2C2E] flex flex-col gap-2">
+                          <div>
+                            <p className="font-barlow text-xs text-white/30 uppercase tracking-widest mb-1">Program cue</p>
+                            <textarea
+                              placeholder="Override the library cue for this program only..."
+                              value={ex.cue_override}
+                              onChange={e => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((ex2, ei) => ei === i ? { ...ex2, cue_override: e.target.value } : ex2) } : d))}
+                              rows={2}
+                              className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-xs placeholder:text-white/15 focus:outline-none focus:border-[#C9A84C] transition-colors resize-none"
+                            />
+                          </div>
+                          <div>
+                            <p className="font-barlow text-xs text-white/30 uppercase tracking-widest mb-1">Notes</p>
+                            <textarea
+                              placeholder="Exercise notes for this program..."
+                              value={ex.notes}
+                              onChange={e => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((ex2, ei) => ei === i ? { ...ex2, notes: e.target.value } : ex2) } : d))}
+                              rows={2}
+                              className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-xs placeholder:text-white/15 focus:outline-none focus:border-[#C9A84C] transition-colors resize-none"
+                            />
+                          </div>
+                        </div>
                       </div>
                     )
                   }
