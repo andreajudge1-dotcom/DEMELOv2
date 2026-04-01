@@ -259,10 +259,11 @@ create table if not exists workout_exercises (
   workout_id    uuid not null references workouts(id) on delete cascade,
   exercise_id   uuid references exercises(id) on delete set null,
   position      int not null default 0,
-  is_unilateral boolean default false,
-  per_side      boolean default false,
-  notes         text,
-  created_at    timestamptz default now()
+  is_unilateral   boolean default false,
+  per_side        boolean default false,
+  superset_group  text default null,
+  notes           text,
+  created_at      timestamptz default now()
 );
 
 alter table workout_exercises enable row level security;

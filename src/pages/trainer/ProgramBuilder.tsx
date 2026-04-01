@@ -19,6 +19,7 @@ interface WorkoutExercise {
   exercise_name: string
   is_unilateral: boolean
   per_side: boolean
+  superset_group: string | null
   position: number
   notes: string
   sets: SetPrescription[]
@@ -176,14 +177,14 @@ export default function ProgramBuilder() {
 
       const { data: wes } = await supabase
         .from('workout_exercises')
-        .select('id, exercise_id, position, notes')
+        .select('id, exercise_id, position, superset_group, notes')
         .eq('workout_id', w.id)
         .order('position')
 
       for (const we of wes ?? []) {
         const { data: newWE } = await supabase
           .from('workout_exercises')
-          .insert({ workout_id: newWorkout.id, exercise_id: we.exercise_id, position: we.position, notes: we.notes ?? null })
+          .insert({ workout_id: newWorkout.id, exercise_id: we.exercise_id, position: we.position, superset_group: (we as any).superset_group ?? null, notes: we.notes ?? null })
           .select()
           .single()
         if (!newWE) continue
@@ -249,7 +250,7 @@ export default function ProgramBuilder() {
       if (workout?.id) {
         const { data: weData } = await supabase
           .from('workout_exercises')
-          .select('id, exercise_id, position, notes, exercises(name, is_unilateral, per_side)')
+          .select('id, exercise_id, position, superset_group, notes, exercises(name, is_unilateral, per_side)')
           .eq('workout_id', workout.id)
           .order('position')
 
@@ -267,6 +268,7 @@ export default function ProgramBuilder() {
             exercise_name: exInfo?.name ?? '',
             is_unilateral: exInfo?.is_unilateral ?? false,
             per_side: exInfo?.per_side ?? false,
+            superset_group: (we as any).superset_group ?? null,
             position: we.position,
             notes: we.notes ?? '',
             sets: (setsData ?? [])
@@ -363,6 +365,7 @@ export default function ProgramBuilder() {
               workout_id: workoutId,
               exercise_id: exercise.exercise_id || null,
               position: exercise.position,
+              superset_group: exercise.superset_group ?? null,
               notes: exercise.notes || null,
             })
             .select()
@@ -424,6 +427,7 @@ export default function ProgramBuilder() {
         exercise_name: ex.name,
         is_unilateral: ex.is_unilateral ?? false,
         per_side: ex.per_side ?? false,
+        superset_group: null,
         position: d.exercises.length,
         notes: '',
         sets: [makeDefaultSet(1)],
@@ -438,6 +442,40 @@ export default function ProgramBuilder() {
       if (i !== activeDayIndex) return d
       return { ...d, exercises: d.exercises.filter(e => e.id !== exLocalId) }
     }))
+  }
+
+  const [supersetPickerFor, setSupersetPickerFor] = useState<number | null>(null)
+
+  function nextSupersetLabel(): string {
+    const used = new Set(
+      (days[activeDayIndex]?.exercises ?? [])
+        .map(e => e.superset_group)
+        .filter(Boolean)
+    )
+    const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+    return labels.find(l => !used.has(l)) ?? 'A'
+  }
+
+  function addToSuperset(exIdx: number, targetIdx: number) {
+    const day = days[activeDayIndex]
+    const targetEx = day.exercises[targetIdx]
+    const label = targetEx.superset_group ?? nextSupersetLabel()
+    setDays(prev => prev.map((d, di) => di === activeDayIndex ? {
+      ...d,
+      exercises: d.exercises.map((e, ei) => {
+        if (ei === exIdx) return { ...e, superset_group: label }
+        if (ei === targetIdx && !e.superset_group) return { ...e, superset_group: label }
+        return e
+      })
+    } : d))
+    setSupersetPickerFor(null)
+  }
+
+  function removeFromSuperset(exIdx: number) {
+    setDays(prev => prev.map((d, di) => di === activeDayIndex ? {
+      ...d,
+      exercises: d.exercises.map((e, ei) => ei === exIdx ? { ...e, superset_group: null } : e)
+    } : d))
   }
 
   function updateDayName(value: string) {
@@ -697,44 +735,66 @@ export default function ProgramBuilder() {
             </div>
 
             {/* Exercises */}
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col">
               {activeDay.exercises.length === 0 && (
-                <div className="bg-[#1C1C1E] border border-dashed border-[#2C2C2E] rounded-xl p-10 text-center">
+                <div className="bg-[#1C1C1E] border border-dashed border-[#2C2C2E] rounded-xl p-10 text-center mb-3">
                   <p className="font-bebas text-lg text-white/20 tracking-wide mb-1">No exercises yet</p>
                   <p className="font-barlow text-xs text-white/20">Tap the button below to add exercises to this day</p>
                 </div>
               )}
 
-              {activeDay.exercises.map(ex => (
-                <div key={ex.id} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl">
-                  {/* Exercise header */}
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-[#2C2C2E] rounded-t-xl">
-                    <span className="font-barlow text-sm font-semibold text-white">{ex.exercise_name}</span>
-                    <button
-                      onClick={() => removeExercise(ex.id)}
-                      className="font-barlow text-xs text-white/20 hover:text-[#E05555] transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </div>
-
-                  {/* Sets */}
-                  <div className="px-4 pb-4">
-                    <SetPrescriptionEditor
-                      sets={ex.sets}
-                      isUnilateral={ex.is_unilateral}
-                      perSide={ex.per_side}
-                      onChange={newSets => setDays(prev => prev.map((d, di) => {
-                        if (di !== activeDayIndex) return d
-                        return {
-                          ...d,
-                          exercises: d.exercises.map(e => e.id === ex.id ? { ...e, sets: newSets } : e)
-                        }
-                      }))}
-                    />
-                  </div>
-                </div>
-              ))}
+              {(() => {
+                const exercises = activeDay.exercises
+                const rendered: React.ReactNode[] = []
+                const renderedGroups = new Set<string>()
+                exercises.forEach((ex, i) => {
+                  const group = ex.superset_group
+                  if (group && renderedGroups.has(group)) return
+                  if (group) {
+                    renderedGroups.add(group)
+                    const groupExercises = exercises.map((e, idx) => ({ e, idx })).filter(({ e }) => e.superset_group === group)
+                    rendered.push(
+                      <div key={'ss-' + group} className="relative mb-3">
+                        <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-[#C9A84C]" style={{ borderRadius: 0 }} />
+                        <div className="absolute left-5 top-1/2 -translate-y-1/2 bg-[#C9A84C] text-black font-barlow text-xs font-bold px-2 py-0.5 rounded-full z-10 whitespace-nowrap">
+                          Superset {group}
+                        </div>
+                        <div className="ml-9 flex flex-col">
+                          {groupExercises.map(({ e: gex, idx: gIdx }, gi) => (
+                            <div key={gIdx} className={`bg-[#1a1508] border border-[#C9A84C]/30 p-4 ${gi === 0 ? 'rounded-t-xl' : ''} ${gi === groupExercises.length - 1 ? 'rounded-b-xl' : 'border-b-0'}`}>
+                              <div className="flex items-center gap-3 mb-2">
+                                <div className="w-6 h-6 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C] flex items-center justify-center flex-shrink-0">
+                                  <span className="font-bebas text-xs text-[#C9A84C]">{gIdx + 1}</span>
+                                </div>
+                                <p className="font-barlow text-sm font-semibold text-white flex-1">{gex.exercise_name}</p>
+                                <button onClick={() => setSupersetPickerFor(gIdx)} className="font-barlow text-xs text-[#C9A84C]/50 hover:text-[#C9A84C] transition-colors border border-[#C9A84C]/20 rounded-full px-2 py-0.5">+ Add to superset</button>
+                                <button onClick={() => removeFromSuperset(gIdx)} className="font-barlow text-xs text-white/20 hover:text-[#E05555]">Remove from superset</button>
+                                <button onClick={() => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.filter((_, ei) => ei !== gIdx) } : d))} className="font-barlow text-xs text-white/20 hover:text-[#E05555] ml-1">Remove</button>
+                              </div>
+                              <SetPrescriptionEditor sets={gex.sets} isUnilateral={gex.is_unilateral} perSide={gex.per_side} onChange={(updatedSets) => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((e, ei) => ei === gIdx ? { ...e, sets: updatedSets } : e) } : d))} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  } else {
+                    rendered.push(
+                      <div key={i} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl p-4 mb-3">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-6 h-6 rounded-full bg-[#C9A84C] flex items-center justify-center flex-shrink-0">
+                            <span className="font-bebas text-xs text-black">{i + 1}</span>
+                          </div>
+                          <p className="font-barlow text-sm font-semibold text-white flex-1">{ex.exercise_name}</p>
+                          <button onClick={() => setSupersetPickerFor(i)} className="font-barlow text-xs text-[#C9A84C]/50 hover:text-[#C9A84C] transition-colors border border-[#C9A84C]/20 rounded-full px-2 py-0.5">+ Superset</button>
+                          <button onClick={() => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.filter((_, ei) => ei !== i) } : d))} className="font-barlow text-xs text-white/20 hover:text-[#E05555]">Remove</button>
+                        </div>
+                        <SetPrescriptionEditor sets={ex.sets} isUnilateral={ex.is_unilateral} perSide={ex.per_side} onChange={(updatedSets) => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.map((e, ei) => ei === i ? { ...e, sets: updatedSets } : e) } : d))} />
+                      </div>
+                    )
+                  }
+                })
+                return rendered
+              })()}
 
               {/* Add exercise button */}
               <button
@@ -753,6 +813,31 @@ export default function ProgramBuilder() {
           onSelect={addExerciseFromPicker}
           onClose={() => setShowPicker(false)}
         />
+      )}
+
+      {supersetPickerFor !== null && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm overflow-hidden">
+            <div className="p-4 border-b border-[#2C2C2E]">
+              <h2 className="font-bebas text-lg text-white tracking-wide">Pair with exercise</h2>
+              <p className="font-barlow text-xs text-white/40 mt-0.5">Select an exercise to group into a superset or tri-set</p>
+            </div>
+            <div className="divide-y divide-[#2C2C2E] max-h-64 overflow-y-auto">
+              {activeDay.exercises.map((ex, idx) => {
+                if (idx === supersetPickerFor) return null
+                return (
+                  <button key={idx} onClick={() => addToSuperset(supersetPickerFor, idx)} className="w-full text-left px-4 py-3 hover:bg-[#242424] transition-colors group">
+                    <p className="font-barlow text-sm font-semibold text-white group-hover:text-[#C9A84C] transition-colors">{ex.exercise_name}</p>
+                    {ex.superset_group && <p className="font-barlow text-xs text-[#C9A84C]/60 mt-0.5">Already in Superset {ex.superset_group} — will join this group</p>}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="p-4 border-t border-[#2C2C2E]">
+              <button onClick={() => setSupersetPickerFor(null)} className="w-full font-barlow text-sm text-white/40 hover:text-white transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
