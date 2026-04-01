@@ -250,7 +250,7 @@ export default function ProgramBuilder() {
       if (workout?.id) {
         const { data: weData } = await supabase
           .from('workout_exercises')
-          .select('id, exercise_id, position, superset_group, notes, exercises(name, is_unilateral, per_side)')
+          .select('id, exercise_id, position, notes, superset_group, exercises(name, is_unilateral, per_side)')
           .eq('workout_id', workout.id)
           .order('position')
 
@@ -435,13 +435,6 @@ export default function ProgramBuilder() {
       return { ...d, exercises: [...d.exercises, newEx] }
     }))
     setShowPicker(false)
-  }
-
-  function removeExercise(exLocalId: string) {
-    setDays(prev => prev.map((d, i) => {
-      if (i !== activeDayIndex) return d
-      return { ...d, exercises: d.exercises.filter(e => e.id !== exLocalId) }
-    }))
   }
 
   const [supersetPickerFor, setSupersetPickerFor] = useState<number | null>(null)
