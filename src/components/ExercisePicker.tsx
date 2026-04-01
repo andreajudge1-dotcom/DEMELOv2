@@ -46,6 +46,9 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [muscleFilter, setMuscleFilter] = useState('All')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editingCueId, setEditingCueId] = useState<string | null>(null)
+  const [cueValue, setCueValue] = useState('')
 
   useEffect(() => {
     fetchExercises()
@@ -59,6 +62,17 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
       .order('name')
     setExercises(data ?? [])
     setLoading(false)
+  }
+
+  async function saveCue(exerciseId: string) {
+    await supabase
+      .from('exercises')
+      .update({ custom_cue: cueValue })
+      .eq('id', exerciseId)
+    setExercises(prev => prev.map(e =>
+      e.id === exerciseId ? { ...e, custom_cue: cueValue } : e
+    ))
+    setEditingCueId(null)
   }
 
   const filtered = exercises.filter(ex => {
@@ -125,45 +139,145 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {filtered.map(ex => (
-                <button
-                  key={ex.id}
-                  onClick={() => onSelect(ex)}
-                  className="text-left bg-[#141414] border border-[#2C2C2E] rounded-xl px-4 py-3 hover:border-[#C9A84C] hover:bg-[#1a1506] transition-colors group w-full"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-barlow text-sm font-semibold text-white group-hover:text-[#C9A84C] transition-colors">
-                          {ex.name}
-                        </span>
-                        {ex.is_unilateral && (
-                          <span className="font-barlow text-xs text-[#E2C070]/70">
-                            · {ex.per_side ? 'Per side' : 'Unilateral'}
+              {filtered.map(ex => {
+                const isExpanded = expandedId === ex.id
+                const isEditing = editingCueId === ex.id
+                const cue = ex.custom_cue || ex.default_cue
+
+                return (
+                  <div
+                    key={ex.id}
+                    className={`bg-[#141414] rounded-xl border transition-colors ${
+                      isExpanded ? 'border-[#C9A84C]' : 'border-[#2C2C2E]'
+                    }`}
+                  >
+                    {/* Main row — click to expand */}
+                    <div
+                      className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+                      onClick={() => {
+                        setExpandedId(isExpanded ? null : ex.id)
+                        setEditingCueId(null)
+                      }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-barlow text-sm font-semibold text-white">
+                            {ex.name}
                           </span>
-                        )}
+                          {ex.is_unilateral && (
+                            <span className="font-barlow text-xs text-[#E2C070]/70">
+                              · {ex.per_side ? 'Per side' : 'Unilateral'}
+                            </span>
+                          )}
+                          {ex.custom_cue && (
+                            <span className="font-barlow text-xs px-1.5 py-0.5 rounded-full bg-[#2A7A2A]/20 text-[#4ade80] border border-[#2A7A2A]/30">
+                              Custom cue
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="font-barlow text-xs text-white/40 capitalize">{ex.primary_muscle}</span>
+                          {ex.equipment && <span className="font-barlow text-xs text-white/25">· {ex.equipment}</span>}
+                          {ex.movement_pattern && (
+                            <span className="font-barlow text-xs text-white/25 capitalize">
+                              · {ex.movement_pattern.replace('-', ' ')}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className="font-barlow text-xs text-white/40 capitalize">{ex.primary_muscle}</span>
-                        {ex.equipment && <span className="font-barlow text-xs text-white/25">· {ex.equipment}</span>}
-                        {ex.movement_pattern && (
-                          <span className="font-barlow text-xs text-white/25 capitalize">
-                            · {ex.movement_pattern.replace('-', ' ')}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {ex.difficulty && (
+                          <span
+                            style={difficultyStyle(ex.difficulty)}
+                            className="font-barlow text-xs px-2 py-0.5 rounded-full capitalize"
+                          >
+                            {ex.difficulty}
                           </span>
                         )}
+                        <span className="text-white/30 text-xs">{isExpanded ? '▲' : '▼'}</span>
                       </div>
                     </div>
-                    {ex.difficulty && (
-                      <span
-                        style={difficultyStyle(ex.difficulty)}
-                        className="font-barlow text-xs px-2 py-0.5 rounded-full capitalize flex-shrink-0"
-                      >
-                        {ex.difficulty}
-                      </span>
+
+                    {/* Expanded detail */}
+                    {isExpanded && (
+                      <div className="border-t border-[#2C2C2E] px-4 py-4">
+                        {ex.secondary_muscles?.length > 0 && (
+                          <div className="mb-3">
+                            <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mb-1">Secondary muscles</p>
+                            <div className="flex gap-2 flex-wrap">
+                              {ex.secondary_muscles.map(m => (
+                                <span key={m} className="font-barlow text-xs px-2 py-0.5 rounded-full bg-[#2C2C2E] text-white/50 capitalize">{m}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {ex.movement_pattern && (
+                          <div className="mb-3">
+                            <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mb-1">Movement pattern</p>
+                            <span className="font-barlow text-xs px-2 py-0.5 rounded-full bg-[#2C2C2E] text-white/50 capitalize">
+                              {ex.movement_pattern.replace('-', ' ')}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Coaching cue */}
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="font-barlow text-xs text-white/40 uppercase tracking-widest">
+                              {ex.custom_cue ? 'Your coaching cue' : 'Default coaching cue'}
+                            </p>
+                            {!isEditing ? (
+                              <button
+                                onClick={e => { e.stopPropagation(); setEditingCueId(ex.id); setCueValue(cue ?? '') }}
+                                className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070]"
+                              >
+                                {ex.custom_cue ? 'Edit cue' : 'Add your cue'}
+                              </button>
+                            ) : (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={e => { e.stopPropagation(); setEditingCueId(null) }}
+                                  className="font-barlow text-xs text-white/40"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); saveCue(ex.id) }}
+                                  className="font-barlow text-xs text-[#C9A84C]"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {isEditing ? (
+                            <textarea
+                              value={cueValue}
+                              onChange={e => setCueValue(e.target.value)}
+                              onClick={e => e.stopPropagation()}
+                              rows={3}
+                              className="w-full bg-[#2C2C2E] border border-[#C9A84C] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none resize-none"
+                            />
+                          ) : (
+                            <div className={`border-l-2 ${ex.custom_cue ? 'border-[#2A7A2A]' : 'border-[#C9A84C]'} pl-3 py-1`}>
+                              <p className="font-barlow text-sm text-white/60 leading-relaxed">{cue || '—'}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Add to day button */}
+                        <button
+                          onClick={e => { e.stopPropagation(); onSelect(ex) }}
+                          className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
+                        >
+                          + Add to Day
+                        </button>
+                      </div>
                     )}
                   </div>
-                </button>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
