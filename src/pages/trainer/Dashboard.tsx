@@ -13,8 +13,8 @@ interface RecentSession {
   id: string
   started_at: string
   status: string
-  clients: { full_name: string } | null
-  workouts: { name: string } | null
+  clients: { full_name: string } | { full_name: string }[] | null
+  workouts: { name: string } | { name: string }[] | null
 }
 
 export default function Dashboard() {
@@ -142,10 +142,10 @@ export default function Dashboard() {
               recentSessions.map(session => (
                 <div key={session.id} className="px-5 py-3">
                   <p className="font-barlow text-sm text-white">
-                    {session.clients?.full_name ?? 'Unknown'}
+                    {(Array.isArray(session.clients) ? session.clients[0]?.full_name : session.clients?.full_name) ?? 'Unknown'}
                   </p>
                   <p className="font-barlow text-xs text-white/40">
-                    {session.workouts?.name ?? 'No workout'} · {new Date(session.started_at).toLocaleDateString()}
+                    {(Array.isArray(session.workouts) ? session.workouts[0]?.name : session.workouts?.name) ?? 'No workout'} · {new Date(session.started_at).toLocaleDateString()}
                   </p>
                 </div>
               ))

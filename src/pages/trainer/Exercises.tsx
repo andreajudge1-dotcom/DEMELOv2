@@ -80,23 +80,6 @@ export default function Exercises() {
     setEditingCueId(null)
   }
 
-  async function toggleFavourite(exerciseId: string) {
-    const { data: existing } = await supabase
-      .from('exercise_favourites')
-      .select('id')
-      .eq('trainer_id', profile?.id)
-      .eq('exercise_id', exerciseId)
-      .single()
-
-    if (existing) {
-      await supabase.from('exercise_favourites').delete().eq('id', existing.id)
-    } else {
-      await supabase.from('exercise_favourites').insert({
-        trainer_id: profile?.id,
-        exercise_id: exerciseId,
-      })
-    }
-  }
 
   async function saveCustomExercise() {
     if (!newExercise.name.trim()) return
