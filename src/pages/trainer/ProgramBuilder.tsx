@@ -428,7 +428,7 @@ export default function ProgramBuilder() {
     navigate('/trainer/programs')
   }
 
-  function addExerciseFromPicker(ex: { id: string; name: string; is_unilateral?: boolean; per_side?: boolean }) {
+  function addExerciseFromPicker(ex: { id: string; name: string; is_unilateral?: boolean; per_side?: boolean; default_cue?: string; custom_cue?: string | null }) {
     setDays(prev => prev.map((d, i) => {
       if (i !== activeDayIndex) return d
       const newEx: WorkoutExercise = {
@@ -439,7 +439,7 @@ export default function ProgramBuilder() {
         per_side: ex.per_side ?? false,
         superset_group: null,
         position: d.exercises.length,
-        cue_override: '',
+        cue_override: ex.custom_cue || ex.default_cue || '',
         notes: '',
         sets: [makeDefaultSet(1)],
       }
