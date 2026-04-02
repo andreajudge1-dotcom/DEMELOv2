@@ -168,25 +168,39 @@ export default function SetPrescriptionEditor({
                       {mod ? MODIFIER_LABELS[mod] : '+ Modifier'}
                     </button>
                     {showModPickerFor === i && (
-                      <div className="absolute left-0 top-full mt-1 z-50 bg-[#1C1C1E] border border-[#3A3A3C] rounded-xl overflow-hidden w-52 shadow-xl">
+                      <div className="absolute left-0 top-full mt-1 z-50 bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl overflow-hidden w-52 shadow-xl">
                         <button
                           onClick={() => setModifier(i, null)}
-                          className={`w-full text-left px-3 py-2 hover:bg-[#2C2C2E] transition-colors ${!mod ? 'bg-[#2C2C2E]' : ''}`}
+                          className={`w-full text-left px-4 py-2.5 font-barlow text-sm transition-colors flex items-center justify-between ${
+                            !mod ? 'text-[#C9A84C] bg-[#C9A84C]/10' : 'text-white/40 hover:bg-[#242424] hover:text-white'
+                          }`}
                         >
-                          <span className="font-barlow text-xs text-white/40">— None —</span>
+                          — None —
+                          {!mod && (
+                            <svg className="w-3.5 h-3.5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
                         </button>
                         {MODIFIER_TYPES.map(type => (
                           <button
                             key={type}
                             onClick={() => setModifier(i, type)}
-                            className={`w-full text-left px-3 py-2 hover:bg-[#2C2C2E] transition-colors ${mod === type ? 'bg-[#2C2C2E]' : ''}`}
+                            className={`w-full text-left px-4 py-2.5 transition-colors ${
+                              mod === type ? 'bg-[#C9A84C]/10' : 'hover:bg-[#242424]'
+                            }`}
                           >
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-between gap-2">
                               <span style={setPillStyle(type)} className="text-xs font-semibold font-barlow capitalize px-2 py-0.5 rounded-full">
                                 {MODIFIER_LABELS[type]}
                               </span>
+                              {mod === type && (
+                                <svg className="w-3.5 h-3.5 text-[#C9A84C] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
                             </div>
-                            <div className="font-barlow text-xs text-white/30 mt-0.5 pl-0.5">
+                            <div className="font-barlow text-xs text-white/30 mt-0.5">
                               {MODIFIER_DESCRIPTIONS[type]}
                             </div>
                           </button>

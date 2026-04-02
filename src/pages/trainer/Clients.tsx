@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import Select from '../../components/Select'
 
 interface Client {
   id: string
@@ -98,13 +99,14 @@ export default function Clients() {
     if (!form.full_name.trim()) { setError('Name is required'); return }
     setSaving(true)
     setError('')
-    const { error: err } = await supabase.from('clients').insert({
+    const insertData: Record<string, unknown> = {
       trainer_id: profile?.id,
       full_name: form.full_name.trim(),
       email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
       status: form.status,
-    })
+    }
+    if (form.phone.trim()) insertData.phone = form.phone.trim()
+    const { error: err } = await supabase.from('clients').insert(insertData)
     if (err) { setError(err.message); setSaving(false); return }
     setSaving(false)
     setShowAdd(false)
@@ -277,16 +279,16 @@ export default function Clients() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="font-barlow text-xs text-white/50 uppercase tracking-wider">Status</label>
-                <select
+                <Select
                   value={form.status}
-                  onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-4 py-2.5 font-barlow text-sm text-white outline-none focus:border-[#C9A84C]/50"
-                >
-                  <option value="active">Active</option>
-                  <option value="invited">Invited</option>
-                  <option value="paused">Paused</option>
-                  <option value="inactive">Inactive</option>
-                </select>
+                  onChange={v => setForm(f => ({ ...f, status: v }))}
+                  options={[
+                    { value: 'active', label: 'Active' },
+                    { value: 'invited', label: 'Invited' },
+                    { value: 'paused', label: 'Paused' },
+                    { value: 'inactive', label: 'Inactive' },
+                  ]}
+                />
               </div>
 
               <div className="flex gap-3 pt-2">
