@@ -160,15 +160,15 @@ export default function SetPrescriptionEditor({
                   <div className="relative">
                     <button
                       onClick={() => setShowModPickerFor(showModPickerFor === i ? null : i)}
-                      style={mod ? setPillStyle(mod) : { borderWidth: '1px', borderStyle: 'solid', borderColor: 'rgba(255,255,255,0.08)' }}
+                      style={mod ? setPillStyle(mod) : { borderWidth: '1px', borderStyle: 'solid', borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.04)' }}
                       className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold font-barlow capitalize transition-colors ${
-                        mod ? '' : 'text-white/20 bg-transparent'
+                        mod ? '' : 'text-white/50 hover:text-white/70'
                       }`}
                     >
-                      {mod ? MODIFIER_LABELS[mod] : '— None —'}
+                      {mod ? MODIFIER_LABELS[mod] : '+ Modifier'}
                     </button>
                     {showModPickerFor === i && (
-                      <div className="absolute left-0 top-full mt-1 z-20 bg-[#1C1C1E] border border-[#3A3A3C] rounded-xl overflow-hidden w-52 shadow-xl">
+                      <div className="absolute left-0 top-full mt-1 z-50 bg-[#1C1C1E] border border-[#3A3A3C] rounded-xl overflow-hidden w-52 shadow-xl">
                         <button
                           onClick={() => setModifier(i, null)}
                           className={`w-full text-left px-3 py-2 hover:bg-[#2C2C2E] transition-colors ${!mod ? 'bg-[#2C2C2E]' : ''}`}
