@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -19,6 +19,7 @@ interface Exercise {
 interface ExercisePickerProps {
   onSelect: (exercise: Exercise) => void
   onClose: () => void
+  defaultMuscleFilter?: string
 }
 
 const MUSCLE_GROUPS = [
@@ -28,24 +29,13 @@ const MUSCLE_GROUPS = [
   'Core', 'Obliques', 'Compound', 'Cardio'
 ]
 
-const DIFFICULTY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  beginner:     { bg: 'rgba(42,122,42,0.2)',   text: '#4ade80', border: 'rgba(42,122,42,0.3)'   },
-  intermediate: { bg: 'rgba(201,168,76,0.15)', text: '#C9A84C', border: 'rgba(201,168,76,0.3)'  },
-  advanced:     { bg: 'rgba(224,85,85,0.15)',  text: '#f87171', border: 'rgba(224,85,85,0.3)'   },
-}
 
-function difficultyStyle(d: string): React.CSSProperties {
-  const c = DIFFICULTY_COLORS[d]
-  if (!c) return {}
-  return { backgroundColor: c.bg, color: c.text, borderColor: c.border, borderWidth: '1px', borderStyle: 'solid' }
-}
-
-export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProps) {
+export default function ExercisePicker({ onSelect, onClose, defaultMuscleFilter }: ExercisePickerProps) {
   const { profile } = useAuth()
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [muscleFilter, setMuscleFilter] = useState('All')
+  const [muscleFilter, setMuscleFilter] = useState(defaultMuscleFilter ?? 'All')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -169,14 +159,6 @@ export default function ExercisePicker({ onSelect, onClose }: ExercisePickerProp
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {ex.difficulty && (
-                          <span
-                            style={difficultyStyle(ex.difficulty)}
-                            className="font-barlow text-xs px-2 py-0.5 rounded-full capitalize"
-                          >
-                            {ex.difficulty}
-                          </span>
-                        )}
                         <span className="text-white/30 text-xs">{isExpanded ? '▲' : '▼'}</span>
                       </div>
                     </div>

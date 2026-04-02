@@ -21,8 +21,6 @@ interface SetPrescriptionEditorProps {
   perSide?: boolean
 }
 
-const SET_TYPES: SetType[] = ['warmup', 'working', 'backoff', 'drop', 'myorep', 'amrap', 'tempo', 'pause']
-
 const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string; border: string }> = {
   warmup:  { bg: 'rgba(59,130,246,0.15)',  text: '#60a5fa', border: 'rgba(59,130,246,0.3)'  },
   working: { bg: 'rgba(42,122,42,0.2)',    text: '#4ade80', border: 'rgba(42,122,42,0.3)'   },
@@ -36,24 +34,41 @@ const SET_TYPE_COLORS: Record<SetType, { bg: string; text: string; border: strin
 
 function setPillStyle(type: SetType) {
   const c = SET_TYPE_COLORS[type]
-  return {
-    backgroundColor: c.bg,
-    color: c.text,
-    borderColor: c.border,
-    borderWidth: '1px',
-    borderStyle: 'solid',
-  }
+  return { backgroundColor: c.bg, color: c.text, borderColor: c.border, borderWidth: '1px', borderStyle: 'solid' }
 }
 
-const SET_TYPE_DESCRIPTIONS: Record<SetType, string> = {
-  warmup: 'Light load to prepare joints and muscles',
-  working: 'Primary working sets at target intensity',
-  backoff: 'Reduced load after top set — typically −10%',
-  drop: 'Immediate load reduction, no rest',
-  myorep: 'Rest-pause set — activate, rest 3 breaths, repeat',
-  amrap: 'As many reps as possible at given load',
-  tempo: 'Controlled eccentric and concentric timing',
-  pause: 'Pause at bottom or mid-range of movement',
+const MODIFIER_TYPES: SetType[] = ['backoff', 'drop', 'myorep', 'amrap', 'tempo', 'pause']
+
+const MODIFIER_LABELS: Record<string, string> = {
+  backoff: 'Backoff',
+  drop:    'Drop Set',
+  myorep:  'Myorep',
+  amrap:   'AMRAP',
+  tempo:   'Tempo',
+  pause:   'Pause',
+}
+
+const MODIFIER_DESCRIPTIONS: Record<string, string> = {
+  backoff: 'Reduced load after top set',
+  drop:    'Immediate load reduction, no rest',
+  myorep:  'Rest-pause set — activate, rest 3 breaths, repeat',
+  amrap:   'As many reps as possible at given load',
+  tempo:   'Controlled eccentric and concentric timing',
+  pause:   'Pause at bottom or mid-range of movement',
+}
+
+// Helpers to split/merge set_type into base + modifier
+function getBase(setType: SetType): 'warmup' | 'working' {
+  return setType === 'warmup' ? 'warmup' : 'working'
+}
+
+function getMod(setType: SetType): SetType | null {
+  return MODIFIER_TYPES.includes(setType) ? setType : null
+}
+
+function resolveType(base: 'warmup' | 'working', mod: SetType | null): SetType {
+  if (base === 'warmup') return 'warmup'
+  return mod ?? 'working'
 }
 
 function defaultSet(setNumber: number): SetPrescription {
@@ -75,12 +90,11 @@ export default function SetPrescriptionEditor({
   isUnilateral = false,
   perSide = false,
 }: SetPrescriptionEditorProps) {
-  const [showTypePickerFor, setShowTypePickerFor] = useState<number | null>(null)
+  const [showModPickerFor, setShowModPickerFor] = useState<number | null>(null)
   const [showSecondaryFor, setShowSecondaryFor] = useState<number | null>(null)
 
   function addSet() {
     const newSet = defaultSet(sets.length + 1)
-    // After first warmup, default to working
     if (sets.length > 0) newSet.set_type = 'working'
     onChange([...sets, newSet])
   }
@@ -96,170 +110,179 @@ export default function SetPrescriptionEditor({
     onChange(sets.map((s, i) => i === index ? { ...s, [field]: value } : s))
   }
 
+  function toggleBase(index: number) {
+    const set = sets[index]
+    const current = getBase(set.set_type)
+    const newBase = current === 'warmup' ? 'working' : 'warmup'
+    updateSet(index, 'set_type', resolveType(newBase, newBase === 'warmup' ? null : getMod(set.set_type)))
+  }
+
+  function setModifier(index: number, mod: SetType | null) {
+    const set = sets[index]
+    updateSet(index, 'set_type', resolveType(getBase(set.set_type), mod))
+    setShowModPickerFor(null)
+  }
+
   return (
     <div className="mt-2">
-      {/* Set rows */}
       {sets.length > 0 && (
         <div className="mb-2">
           {/* Header */}
-          <div className="grid grid-cols-[32px_110px_80px_80px_100px_32px] gap-2 px-1 mb-1">
+          <div className="grid grid-cols-[28px_80px_110px_72px_64px_28px] gap-2 px-1 mb-1">
             <div />
-            <div className="font-barlow text-xs text-white/30 uppercase tracking-widest">Type</div>
+            <div className="font-barlow text-xs text-white/30 uppercase tracking-widest">Base</div>
+            <div className="font-barlow text-xs text-white/30 uppercase tracking-widest">Modifier</div>
             <div className="font-barlow text-xs text-white/30 uppercase tracking-widest">Reps</div>
             <div className="font-barlow text-xs text-white/30 uppercase tracking-widest">RPE</div>
-            <div className="font-barlow text-xs text-white/30 uppercase tracking-widest">Load mod %</div>
             <div />
           </div>
 
-          {sets.map((set, i) => (
-            <div key={i} className="mb-1">
-              <div className="grid grid-cols-[32px_110px_80px_80px_100px_32px] gap-2 items-center">
-                {/* Set number */}
-                <div className="font-barlow text-xs text-white/30 text-center">{set.set_number}</div>
+          {sets.map((set, i) => {
+            const base = getBase(set.set_type)
+            const mod = getMod(set.set_type)
 
-                {/* Set type pill */}
-                <div className="relative">
+            return (
+              <div key={i} className="mb-1">
+                <div className="grid grid-cols-[28px_80px_110px_72px_64px_28px] gap-2 items-center">
+                  {/* Set number */}
+                  <div className="font-barlow text-xs text-white/30 text-center">{set.set_number}</div>
+
+                  {/* Base toggle: Warmup ↔ Working */}
                   <button
-                    onClick={() => setShowTypePickerFor(showTypePickerFor === i ? null : i)}
-                    style={setPillStyle(set.set_type)}
+                    onClick={() => toggleBase(i)}
+                    style={setPillStyle(base)}
                     className="w-full px-2 py-1.5 rounded-lg text-xs font-semibold font-barlow capitalize transition-colors"
                   >
-                    {set.set_type}
+                    {base === 'warmup' ? 'Warmup' : 'Working'}
                   </button>
-                  {showTypePickerFor === i && (
-                    <div className="absolute left-0 top-full mt-1 z-20 bg-[#1C1C1E] border border-[#3A3A3C] rounded-xl overflow-hidden w-52 shadow-xl max-h-64 overflow-y-auto">
-                      {SET_TYPES.map(type => (
+
+                  {/* Modifier dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowModPickerFor(showModPickerFor === i ? null : i)}
+                      style={mod ? setPillStyle(mod) : { borderWidth: '1px', borderStyle: 'solid', borderColor: 'rgba(255,255,255,0.08)' }}
+                      className={`w-full px-2 py-1.5 rounded-lg text-xs font-semibold font-barlow capitalize transition-colors ${
+                        mod ? '' : 'text-white/20 bg-transparent'
+                      }`}
+                    >
+                      {mod ? MODIFIER_LABELS[mod] : '— None —'}
+                    </button>
+                    {showModPickerFor === i && (
+                      <div className="absolute left-0 top-full mt-1 z-20 bg-[#1C1C1E] border border-[#3A3A3C] rounded-xl overflow-hidden w-52 shadow-xl">
                         <button
-                          key={type}
-                          onClick={() => { updateSet(i, 'set_type', type); setShowTypePickerFor(null) }}
-                          className={`w-full text-left px-3 py-2 hover:bg-[#2C2C2E] transition-colors ${set.set_type === type ? 'bg-[#2C2C2E]' : ''}`}
+                          onClick={() => setModifier(i, null)}
+                          className={`w-full text-left px-3 py-2 hover:bg-[#2C2C2E] transition-colors ${!mod ? 'bg-[#2C2C2E]' : ''}`}
                         >
-                          <div className="flex items-center gap-2">
-                            <span
-                              style={setPillStyle(type)}
-                              className="text-xs font-semibold font-barlow capitalize px-2 py-0.5 rounded-full"
-                            >
-                              {type}
-                            </span>
-                          </div>
-                          <div className="font-barlow text-xs text-white/30 mt-0.5 pl-0.5">
-                            {SET_TYPE_DESCRIPTIONS[type]}
-                          </div>
+                          <span className="font-barlow text-xs text-white/40">— None —</span>
                         </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Reps */}
-                <input
-                  type="text"
-                  placeholder="e.g. 8"
-                  value={set.reps}
-                  onChange={e => updateSet(i, 'reps', e.target.value)}
-                  className="bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-2 py-1.5 text-white font-barlow text-xs text-center focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
-                />
-
-                {/* RPE */}
-                <input
-                  type="number"
-                  placeholder="RPE"
-                  step="0.5"
-                  min="1"
-                  max="10"
-                  value={set.rpe_target ?? ''}
-                  onChange={e => updateSet(i, 'rpe_target', e.target.value ? parseFloat(e.target.value) : null)}
-                  className="bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-2 py-1.5 text-white font-barlow text-xs text-center focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
-                />
-
-                {/* Load modifier */}
-                <input
-                  type="number"
-                  placeholder="e.g. −10"
-                  step="2.5"
-                  value={set.load_modifier ?? ''}
-                  onChange={e => updateSet(i, 'load_modifier', e.target.value ? parseFloat(e.target.value) : null)}
-                  className="bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-2 py-1.5 text-white font-barlow text-xs text-center focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
-                />
-
-                {/* Remove */}
-                <button
-                  onClick={() => removeSet(i)}
-                  className="text-white/20 hover:text-[#E05555] transition-colors text-xs"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Secondary options toggle */}
-              <div className="pl-9 mt-1">
-                <button
-                  onClick={() => setShowSecondaryFor(showSecondaryFor === i ? null : i)}
-                  className="font-barlow text-xs text-[#C9A84C]/50 hover:text-[#C9A84C] transition-colors"
-                >
-                  {showSecondaryFor === i ? '▲ Hide' : '▼ Hold / Tempo / Cue'}
-                </button>
-
-                {showSecondaryFor === i && (
-                  <div className="mt-2 bg-[#0A0A0A] border border-[#2C2C2E] rounded-xl p-3 flex flex-col gap-3">
-                    {/* Hold seconds */}
-                    <div>
-                      <label className="font-barlow text-xs text-white/30 uppercase tracking-widest block mb-1">Hold (seconds)</label>
-                      <input
-                        type="number"
-                        placeholder="e.g. 2"
-                        value={set.hold_seconds ?? ''}
-                        onChange={e => updateSet(i, 'hold_seconds', e.target.value ? parseInt(e.target.value) : null)}
-                        className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
-                      />
-                    </div>
-
-                    {/* Tempo */}
-                    <div>
-                      <label className="font-barlow text-xs text-white/30 uppercase tracking-widest block mb-1">Tempo (eccentric.pause.concentric)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 3.1.1 or 4.2.1"
-                        value={set.tempo}
-                        onChange={e => updateSet(i, 'tempo', e.target.value)}
-                        className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
-                      />
-                      <p className="font-barlow text-xs text-white/20 mt-1">3.1.1 = 3 second lower, 1 second pause, 1 second up</p>
-                    </div>
-
-                    {/* Coaching cue */}
-                    <div>
-                      <label className="font-barlow text-xs text-white/30 uppercase tracking-widest block mb-1">Set-specific coaching cue</label>
-                      <textarea
-                        placeholder="Optional cue specific to this set..."
-                        value={set.cue}
-                        onChange={e => updateSet(i, 'cue', e.target.value)}
-                        rows={2}
-                        className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors w-full resize-none"
-                      />
-                    </div>
-
-                    {/* Unilateral per side note */}
-                    {isUnilateral && (
-                      <div className="bg-[#E2C070]/10 border border-[#E2C070]/20 rounded-lg px-3 py-2">
-                        <p className="font-barlow text-xs text-[#E2C070]/80">
-                          {perSide ? 'Reps are per side — client will be prompted to log left and right separately.' : 'Unilateral exercise — client completes all reps on one side then switches.'}
-                        </p>
+                        {MODIFIER_TYPES.map(type => (
+                          <button
+                            key={type}
+                            onClick={() => setModifier(i, type)}
+                            className={`w-full text-left px-3 py-2 hover:bg-[#2C2C2E] transition-colors ${mod === type ? 'bg-[#2C2C2E]' : ''}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span style={setPillStyle(type)} className="text-xs font-semibold font-barlow capitalize px-2 py-0.5 rounded-full">
+                                {MODIFIER_LABELS[type]}
+                              </span>
+                            </div>
+                            <div className="font-barlow text-xs text-white/30 mt-0.5 pl-0.5">
+                              {MODIFIER_DESCRIPTIONS[type]}
+                            </div>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
-                )}
+
+                  {/* Reps */}
+                  <input
+                    type="text"
+                    placeholder="e.g. 8"
+                    value={set.reps}
+                    onChange={e => updateSet(i, 'reps', e.target.value)}
+                    className="bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-2 py-1.5 text-white font-barlow text-xs text-center focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
+                  />
+
+                  {/* RPE */}
+                  <input
+                    type="number"
+                    placeholder="RPE"
+                    step="0.5"
+                    min="1"
+                    max="10"
+                    value={set.rpe_target ?? ''}
+                    onChange={e => updateSet(i, 'rpe_target', e.target.value ? parseFloat(e.target.value) : null)}
+                    className="bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-2 py-1.5 text-white font-barlow text-xs text-center focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
+                  />
+
+                  {/* Remove */}
+                  <button onClick={() => removeSet(i)} className="text-white/20 hover:text-[#E05555] transition-colors text-xs">
+                    ✕
+                  </button>
+                </div>
+
+                {/* Secondary options: Hold / Tempo / Cue */}
+                <div className="pl-8 mt-1">
+                  <button
+                    onClick={() => setShowSecondaryFor(showSecondaryFor === i ? null : i)}
+                    className="font-barlow text-xs text-[#C9A84C]/50 hover:text-[#C9A84C] transition-colors"
+                  >
+                    {showSecondaryFor === i ? '▲ Hide' : '▼ Hold / Tempo / Cue'}
+                  </button>
+
+                  {showSecondaryFor === i && (
+                    <div className="mt-2 bg-[#0A0A0A] border border-[#2C2C2E] rounded-xl p-3 flex flex-col gap-3">
+                      <div>
+                        <label className="font-barlow text-xs text-white/30 uppercase tracking-widest block mb-1">Hold (seconds)</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 2"
+                          value={set.hold_seconds ?? ''}
+                          onChange={e => updateSet(i, 'hold_seconds', e.target.value ? parseInt(e.target.value) : null)}
+                          className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-barlow text-xs text-white/30 uppercase tracking-widest block mb-1">Tempo (eccentric.pause.concentric)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 3.1.1 or 4.2.1"
+                          value={set.tempo}
+                          onChange={e => updateSet(i, 'tempo', e.target.value)}
+                          className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors w-full"
+                        />
+                        <p className="font-barlow text-xs text-white/20 mt-1">3.1.1 = 3s lower · 1s pause · 1s up</p>
+                      </div>
+                      <div>
+                        <label className="font-barlow text-xs text-white/30 uppercase tracking-widest block mb-1">Set-specific cue</label>
+                        <textarea
+                          placeholder="Optional cue specific to this set..."
+                          value={set.cue}
+                          onChange={e => updateSet(i, 'cue', e.target.value)}
+                          rows={2}
+                          className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 text-white font-barlow text-sm focus:outline-none focus:border-[#C9A84C] transition-colors w-full resize-none"
+                        />
+                      </div>
+                      {isUnilateral && (
+                        <div className="bg-[#E2C070]/10 border border-[#E2C070]/20 rounded-lg px-3 py-2">
+                          <p className="font-barlow text-xs text-[#E2C070]/80">
+                            {perSide
+                              ? 'Reps are per side — client logs left and right separately.'
+                              : 'Unilateral exercise — client completes all reps on one side then switches.'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
-      {/* Add set button */}
-      <button
-        onClick={addSet}
-        className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors flex items-center gap-1"
-      >
+      <button onClick={addSet} className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors flex items-center gap-1">
         + Add set
       </button>
     </div>

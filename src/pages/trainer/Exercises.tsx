@@ -28,11 +28,6 @@ const MUSCLE_GROUPS = [
 
 const EQUIPMENT = ['All', 'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell']
 
-const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'bg-[#2A7A2A]/20 text-[#2A7A2A] border-[#2A7A2A]/30',
-  intermediate: 'bg-[#C9A84C]/20 text-[#C9A84C] border-[#C9A84C]/30',
-  advanced: 'bg-[#E05555]/20 text-[#E05555] border-[#E05555]/30',
-}
 
 export default function Exercises() {
   const { profile } = useAuth()
@@ -233,11 +228,6 @@ export default function Exercises() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {ex.difficulty && (
-                    <span className={`font-barlow text-xs px-2 py-0.5 rounded-full border capitalize ${DIFFICULTY_COLORS[ex.difficulty] ?? ''}`}>
-                      {ex.difficulty}
-                    </span>
-                  )}
                   <span className="text-white/30 text-xs">{isExpanded ? '▲' : '▼'}</span>
                 </div>
               </div>

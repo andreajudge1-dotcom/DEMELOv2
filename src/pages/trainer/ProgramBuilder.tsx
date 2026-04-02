@@ -31,6 +31,7 @@ interface WorkoutDay {
   day_number: number
   name: string
   focus: string
+  is_rest_day: boolean
   exercises: WorkoutExercise[]
 }
 
@@ -87,7 +88,9 @@ export default function ProgramBuilder() {
 
   // Exercise picker
   const [showPicker, setShowPicker] = useState(false)
+  const [pickerFilter, setPickerFilter] = useState<string | undefined>(undefined)
   const [showCoverPicker, setShowCoverPicker] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
 
   useEffect(() => { fetchClients() }, [])
 
@@ -241,11 +244,13 @@ export default function ProgramBuilder() {
     const builtDays: WorkoutDay[] = []
     for (let d = 1; d <= numDays; d++) {
       const workout = workouts?.find(w => w.day_number === d)
+      const isRestDay = workout?.focus === 'rest_day'
       const day: WorkoutDay = {
         id: workout?.id ?? null,
         day_number: d,
         name: workout?.name ?? `Day ${d}`,
-        focus: workout?.focus ?? '',
+        focus: isRestDay ? '' : (workout?.focus ?? ''),
+        is_rest_day: isRestDay,
         exercises: [],
       }
       if (workout?.id) {
@@ -329,6 +334,7 @@ export default function ProgramBuilder() {
       day_number: i + 1,
       name: `Day ${i + 1}`,
       focus: '',
+      is_rest_day: false,
       exercises: [],
     }))
     setDays(initialDays)
@@ -344,18 +350,20 @@ export default function ProgramBuilder() {
     for (const day of days) {
       let workoutId = day.id
 
+      const workoutFocus = day.is_rest_day ? 'rest_day' : (day.focus || null)
       if (!workoutId) {
         const { data: workoutData } = await supabase
           .from('workouts')
-          .insert({ cycle_id: programId, day_number: day.day_number, name: day.name, focus: day.focus || null })
+          .insert({ cycle_id: programId, day_number: day.day_number, name: day.name, focus: workoutFocus })
           .select()
           .single()
         workoutId = workoutData?.id ?? null
       } else {
-        await supabase.from('workouts').update({ name: day.name, focus: day.focus || null }).eq('id', workoutId)
+        await supabase.from('workouts').update({ name: day.name, focus: workoutFocus }).eq('id', workoutId)
       }
 
       if (!workoutId) continue
+      if (day.is_rest_day) continue
 
       for (const exercise of day.exercises) {
         let workoutExerciseId = exercise.id
@@ -534,7 +542,7 @@ export default function ProgramBuilder() {
               <Select
                 value={String(form.numDays)}
                 onChange={val => setForm(f => ({ ...f, numDays: Number(val) }))}
-                options={[2, 3, 4, 5, 6].map(n => ({ value: String(n), label: `${n} days` }))}
+                options={[2, 3, 4, 5, 6, 7].map(n => ({ value: String(n), label: `${n} days` }))}
                 className="w-full"
               />
             </div>
@@ -692,13 +700,21 @@ export default function ProgramBuilder() {
             <p className="font-barlow text-xs text-white/30 mt-0.5">{form.numDays} days/week · {form.numWeeks} weeks</p>
           </div>
         </div>
-        <button
-          onClick={handleFinish}
-          disabled={saving}
-          className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-5 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-50"
-        >
-          {saving ? 'SAVING...' : 'SAVE PROGRAM'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowSummary(true)}
+            className="font-barlow text-sm text-white/40 hover:text-white border border-[#2C2C2E] hover:border-[#3A3A3C] rounded-lg px-4 py-2 transition-colors"
+          >
+            Summary
+          </button>
+          <button
+            onClick={handleFinish}
+            disabled={saving}
+            className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-5 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+          >
+            {saving ? 'SAVING...' : 'SAVE PROGRAM'}
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-5">
@@ -711,13 +727,21 @@ export default function ProgramBuilder() {
               className={`w-full text-left px-3 py-3 rounded-lg border transition-colors ${
                 activeDayIndex === idx
                   ? 'bg-[#1C1C1E] border-[#C9A84C] text-white'
-                  : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-[#1C1C1E]'
+                  : day.is_rest_day
+                    ? 'bg-transparent border-transparent text-white/20 hover:text-white/40 hover:bg-[#1C1C1E]/50'
+                    : 'bg-transparent border-transparent text-white/40 hover:text-white hover:bg-[#1C1C1E]'
               }`}
             >
               <p className="font-bebas text-sm tracking-wide leading-tight">Day {day.day_number}</p>
-              <p className="font-barlow text-xs text-white/30 truncate leading-tight mt-0.5">{day.name}</p>
-              {day.exercises.length > 0 && (
-                <p className="font-barlow text-xs text-[#C9A84C]/60 mt-1">{day.exercises.length} ex.</p>
+              {day.is_rest_day ? (
+                <p className="font-barlow text-xs text-white/25 leading-tight mt-0.5">Rest Day</p>
+              ) : (
+                <>
+                  <p className="font-barlow text-xs text-white/30 truncate leading-tight mt-0.5">{day.name}</p>
+                  {day.exercises.length > 0 && (
+                    <p className="font-barlow text-xs text-[#C9A84C]/60 mt-1">{day.exercises.length} ex.</p>
+                  )}
+                </>
               )}
             </button>
           ))}
@@ -740,10 +764,23 @@ export default function ProgramBuilder() {
 
             {/* Exercises */}
             <div className="flex flex-col">
+              {activeDay.is_rest_day ? (
+                <div className="bg-[#141414] border border-dashed border-[#2C2C2E] rounded-xl p-12 text-center mb-3 flex flex-col items-center gap-3">
+                  <p className="font-bebas text-2xl text-white/20 tracking-wide">Rest Day</p>
+                  <p className="font-barlow text-xs text-white/20">No exercises scheduled for this day</p>
+                  <button
+                    onClick={() => setDays(prev => prev.map((d, i) => i === activeDayIndex ? { ...d, is_rest_day: false } : d))}
+                    className="font-barlow text-xs text-white/30 hover:text-white border border-[#2C2C2E] hover:border-[#3A3A3C] rounded-lg px-3 py-1.5 transition-colors mt-1"
+                  >
+                    Remove rest day
+                  </button>
+                </div>
+              ) : (
+                <>
               {activeDay.exercises.length === 0 && (
                 <div className="bg-[#1C1C1E] border border-dashed border-[#2C2C2E] rounded-xl p-10 text-center mb-3">
                   <p className="font-bebas text-lg text-white/20 tracking-wide mb-1">No exercises yet</p>
-                  <p className="font-barlow text-xs text-white/20">Tap the button below to add exercises to this day</p>
+                  <p className="font-barlow text-xs text-white/20">Use the buttons below to add exercises to this day</p>
                 </div>
               )}
 
@@ -844,13 +881,29 @@ export default function ProgramBuilder() {
                 return rendered
               })()}
 
-              {/* Add exercise button */}
-              <button
-                onClick={() => setShowPicker(true)}
-                className="w-full bg-[#141414] border border-dashed border-[#2C2C2E] rounded-xl py-4 font-bebas text-sm text-white/30 tracking-widest hover:border-[#C9A84C] hover:text-[#C9A84C] transition-colors"
-              >
-                + ADD EXERCISE
-              </button>
+              {/* Action buttons */}
+              <div className="flex gap-2 mt-1">
+                <button
+                  onClick={() => { setPickerFilter(undefined); setShowPicker(true) }}
+                  className="flex-1 bg-[#141414] border border-dashed border-[#2C2C2E] rounded-xl py-3 font-bebas text-sm text-white/30 tracking-widest hover:border-[#C9A84C] hover:text-[#C9A84C] transition-colors"
+                >
+                  + Add Exercise
+                </button>
+                <button
+                  onClick={() => { setPickerFilter('Cardio'); setShowPicker(true) }}
+                  className="flex-1 bg-[#141414] border border-dashed border-[#2C2C2E] rounded-xl py-3 font-bebas text-sm text-white/30 tracking-widest hover:border-[#2dd4bf] hover:text-[#2dd4bf] transition-colors"
+                >
+                  + Add Cardio
+                </button>
+                <button
+                  onClick={() => setDays(prev => prev.map((d, i) => i === activeDayIndex ? { ...d, is_rest_day: true, exercises: [] } : d))}
+                  className="flex-1 bg-[#141414] border border-dashed border-[#2C2C2E] rounded-xl py-3 font-bebas text-sm text-white/30 tracking-widest hover:border-[#3A3A3C] hover:text-white/50 transition-colors"
+                >
+                  Rest Day
+                </button>
+              </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -860,7 +913,58 @@ export default function ProgramBuilder() {
         <ExercisePicker
           onSelect={addExerciseFromPicker}
           onClose={() => setShowPicker(false)}
+          defaultMuscleFilter={pickerFilter}
         />
+      )}
+
+      {showSummary && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#2C2C2E] flex items-center justify-between">
+              <div>
+                <h2 className="font-bebas text-xl text-white tracking-wide">Program Summary</h2>
+                <p className="font-barlow text-xs text-white/40 mt-0.5">{form.numDays} days · {form.numWeeks} weeks</p>
+              </div>
+              <button onClick={() => setShowSummary(false)} className="font-barlow text-sm text-white/40 hover:text-white">✕</button>
+            </div>
+            <div className="divide-y divide-[#2C2C2E] max-h-[60vh] overflow-y-auto">
+              {days.map(day => (
+                <div key={day.day_number} className="px-5 py-3 flex items-center gap-4">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-bebas text-sm ${
+                    day.is_rest_day ? 'bg-[#2C2C2E] text-white/30' : 'bg-[#C9A84C]/20 text-[#C9A84C]'
+                  }`}>
+                    {day.day_number}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {day.is_rest_day ? (
+                      <p className="font-barlow text-sm text-white/30">Rest Day</p>
+                    ) : (
+                      <>
+                        <p className="font-barlow text-sm font-semibold text-white">{day.name}</p>
+                        <p className="font-barlow text-xs text-white/40 mt-0.5">
+                          {day.focus ? `${day.focus} · ` : ''}{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  {!day.is_rest_day && day.exercises.length > 0 && (
+                    <div className="flex flex-col gap-0.5 items-end">
+                      {day.exercises.slice(0, 3).map((ex, i) => (
+                        <p key={i} className="font-barlow text-xs text-white/25 truncate max-w-[120px]">{ex.exercise_name}</p>
+                      ))}
+                      {day.exercises.length > 3 && (
+                        <p className="font-barlow text-xs text-white/20">+{day.exercises.length - 3} more</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-[#2C2C2E]">
+              <button onClick={() => setShowSummary(false)} className="w-full font-barlow text-sm text-white/40 hover:text-white transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {supersetPickerFor !== null && (
