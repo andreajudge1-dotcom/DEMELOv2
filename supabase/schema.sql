@@ -371,6 +371,7 @@ create table if not exists sessions (
   completed_at timestamptz,
   duration_min int,
   notes        text,
+  coach_notes  text,
   rating       int check (rating between 1 and 5),
   created_at   timestamptz default now()
 );
@@ -805,6 +806,35 @@ alter table trainer_analytics enable row level security;
 
 create policy "Trainer reads own analytics"
   on trainer_analytics for select using (trainer_id = auth.uid());
+
+
+-- ---------------------------------------------------------------------------
+-- 24. TRAINING MAXES
+--     Trainer-set 1RM / training max values per lift per client.
+-- ---------------------------------------------------------------------------
+create table if not exists training_maxes (
+  id             uuid primary key default gen_random_uuid(),
+  client_id      uuid not null references clients(id) on delete cascade,
+  trainer_id     uuid not null references profiles(id) on delete cascade,
+  exercise_name  text not null,
+  max_kg         numeric,
+  updated_at     timestamptz default now(),
+  created_at     timestamptz default now(),
+  unique (client_id, exercise_name)
+);
+
+alter table training_maxes enable row level security;
+
+create policy "Trainer manages client maxes"
+  on training_maxes
+  using (trainer_id = auth.uid())
+  with check (trainer_id = auth.uid());
+
+create policy "Client reads own maxes"
+  on training_maxes for select
+  using (
+    exists (select 1 from clients c where c.id = training_maxes.client_id and c.profile_id = auth.uid())
+  );
 
 
 -- ---------------------------------------------------------------------------

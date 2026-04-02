@@ -6,6 +6,7 @@ import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
 import Dashboard from './pages/trainer/Dashboard'
 import Clients from './pages/trainer/Clients'
+import ClientProfile from './pages/trainer/ClientProfile'
 import Programs from './pages/trainer/Programs'
 import ProgramBuilder from './pages/trainer/ProgramBuilder'
 import Exercises from './pages/trainer/Exercises'
@@ -36,6 +37,7 @@ function AppRoutes() {
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="clients" element={<Clients />} />
+        <Route path="clients/:id" element={<ClientProfile />} />
         <Route path="programs" element={<Programs />} />
         <Route path="programs/new" element={<ProgramBuilder />} />
         <Route path="programs/:id" element={<ProgramBuilder />} />
