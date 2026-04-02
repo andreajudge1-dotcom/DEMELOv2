@@ -91,6 +91,7 @@ export default function ProgramBuilder() {
   const [pickerFilter, setPickerFilter] = useState<string | undefined>(undefined)
   const [showCoverPicker, setShowCoverPicker] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
+  const [expandedSummaryDay, setExpandedSummaryDay] = useState<number | null>(null)
 
   useEffect(() => { fetchClients() }, [])
 
@@ -925,43 +926,60 @@ export default function ProgramBuilder() {
                 <h2 className="font-bebas text-xl text-white tracking-wide">Program Summary</h2>
                 <p className="font-barlow text-xs text-white/40 mt-0.5">{form.numDays} days · {form.numWeeks} weeks</p>
               </div>
-              <button onClick={() => setShowSummary(false)} className="font-barlow text-sm text-white/40 hover:text-white">✕</button>
+              <button onClick={() => { setShowSummary(false); setExpandedSummaryDay(null) }} className="font-barlow text-sm text-white/40 hover:text-white">✕</button>
             </div>
             <div className="divide-y divide-[#2C2C2E] max-h-[60vh] overflow-y-auto">
-              {days.map(day => (
-                <div key={day.day_number} className="px-5 py-3 flex items-center gap-4">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-bebas text-sm ${
-                    day.is_rest_day ? 'bg-[#2C2C2E] text-white/30' : 'bg-[#C9A84C]/20 text-[#C9A84C]'
-                  }`}>
-                    {day.day_number}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {day.is_rest_day ? (
-                      <p className="font-barlow text-sm text-white/30">Rest Day</p>
-                    ) : (
-                      <>
-                        <p className="font-barlow text-sm font-semibold text-white">{day.name}</p>
-                        <p className="font-barlow text-xs text-white/40 mt-0.5">
-                          {day.focus ? `${day.focus} · ` : ''}{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
-                        </p>
-                      </>
-                    )}
-                  </div>
-                  {!day.is_rest_day && day.exercises.length > 0 && (
-                    <div className="flex flex-col gap-0.5 items-end">
-                      {day.exercises.slice(0, 3).map((ex, i) => (
-                        <p key={i} className="font-barlow text-xs text-white/25 truncate max-w-[120px]">{ex.exercise_name}</p>
-                      ))}
-                      {day.exercises.length > 3 && (
-                        <p className="font-barlow text-xs text-white/20">+{day.exercises.length - 3} more</p>
+              {days.map(day => {
+                const isOpen = expandedSummaryDay === day.day_number
+                const canExpand = !day.is_rest_day && day.exercises.length > 0
+                return (
+                  <div key={day.day_number}>
+                    <div
+                      className={`px-5 py-3 flex items-center gap-4 ${canExpand ? 'cursor-pointer hover:bg-[#242424]' : ''} transition-colors`}
+                      onClick={() => canExpand && setExpandedSummaryDay(isOpen ? null : day.day_number)}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-bebas text-sm ${
+                        day.is_rest_day ? 'bg-[#2C2C2E] text-white/30' : 'bg-[#C9A84C]/20 text-[#C9A84C]'
+                      }`}>
+                        {day.day_number}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {day.is_rest_day ? (
+                          <p className="font-barlow text-sm text-white/30">Rest Day</p>
+                        ) : (
+                          <>
+                            <p className="font-barlow text-sm font-semibold text-white">{day.name}</p>
+                            <p className="font-barlow text-xs text-white/40 mt-0.5">
+                              {day.focus ? `${day.focus} · ` : ''}{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      {canExpand && (
+                        <span className="font-barlow text-xs text-white/30 flex-shrink-0">{isOpen ? '▲' : '▼'}</span>
                       )}
                     </div>
-                  )}
-                </div>
-              ))}
+                    {isOpen && (
+                      <div className="px-5 pb-3 bg-[#171717]">
+                        <div className="flex flex-col gap-1 pt-1">
+                          {day.exercises.map((ex, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <span className="font-barlow text-xs text-white/25 w-4 text-right flex-shrink-0">{i + 1}.</span>
+                              <span className="font-barlow text-sm text-white/70">{ex.exercise_name}</span>
+                              {ex.superset_group && (
+                                <span className="font-barlow text-xs text-[#C9A84C]/60 bg-[#C9A84C]/10 px-1.5 py-0.5 rounded-full">SS {ex.superset_group}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
             <div className="px-5 py-3 border-t border-[#2C2C2E]">
-              <button onClick={() => setShowSummary(false)} className="w-full font-barlow text-sm text-white/40 hover:text-white transition-colors">Close</button>
+              <button onClick={() => { setShowSummary(false); setExpandedSummaryDay(null) }} className="w-full font-barlow text-sm text-white/40 hover:text-white transition-colors">Close</button>
             </div>
           </div>
         </div>
