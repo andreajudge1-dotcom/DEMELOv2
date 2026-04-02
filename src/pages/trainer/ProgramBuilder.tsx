@@ -92,6 +92,7 @@ export default function ProgramBuilder() {
   const [showCoverPicker, setShowCoverPicker] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
   const [expandedSummaryDay, setExpandedSummaryDay] = useState<number | null>(null)
+  const [showSaveModal, setShowSaveModal] = useState(false)
 
   useEffect(() => { fetchClients() }, [])
 
@@ -344,8 +345,9 @@ export default function ProgramBuilder() {
     setSaving(false)
   }
 
-  async function handleFinish() {
+  async function handleFinish(exitAfter: boolean) {
     if (!programId) return
+    setShowSaveModal(false)
     setSaving(true)
 
     for (const day of days) {
@@ -434,7 +436,7 @@ export default function ProgramBuilder() {
     }
 
     setSaving(false)
-    navigate('/trainer/programs')
+    if (exitAfter) navigate('/trainer/programs')
   }
 
   function addExerciseFromPicker(ex: { id: string; name: string; is_unilateral?: boolean; per_side?: boolean; default_cue?: string; custom_cue?: string | null }) {
@@ -709,7 +711,7 @@ export default function ProgramBuilder() {
             Summary
           </button>
           <button
-            onClick={handleFinish}
+            onClick={() => setShowSaveModal(true)}
             disabled={saving}
             className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-5 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-50"
           >
@@ -916,6 +918,38 @@ export default function ProgramBuilder() {
           onClose={() => setShowPicker(false)}
           defaultMuscleFilter={pickerFilter}
         />
+      )}
+
+      {/* Save modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm overflow-hidden">
+            <div className="px-6 pt-6 pb-2">
+              <h2 className="font-bebas text-2xl text-white tracking-wide">Save Program</h2>
+              <p className="font-barlow text-sm text-white/50 mt-1">Would you like to keep editing after saving?</p>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-3">
+              <button
+                onClick={() => handleFinish(false)}
+                className="w-full bg-[#C9A84C] text-black font-bebas text-base tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors"
+              >
+                Save &amp; Keep Working
+              </button>
+              <button
+                onClick={() => handleFinish(true)}
+                className="w-full bg-[#2C2C2E] text-white font-bebas text-base tracking-widest py-3 rounded-xl hover:bg-[#3A3A3C] transition-colors"
+              >
+                Save &amp; Exit
+              </button>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="w-full font-barlow text-sm text-white/30 hover:text-white/60 transition-colors py-1"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showSummary && (
