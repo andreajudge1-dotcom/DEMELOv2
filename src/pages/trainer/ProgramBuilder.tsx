@@ -436,7 +436,12 @@ export default function ProgramBuilder() {
     }
 
     setSaving(false)
-    if (exitAfter) navigate('/trainer/programs')
+    if (exitAfter) {
+      navigate('/trainer/programs')
+    } else {
+      // Reload days so local IDs reflect real DB IDs (prevents duplicates on next save)
+      await loadDays(programId, form.numDays)
+    }
   }
 
   function addExerciseFromPicker(ex: { id: string; name: string; is_unilateral?: boolean; per_side?: boolean; default_cue?: string; custom_cue?: string | null }) {
