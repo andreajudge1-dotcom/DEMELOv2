@@ -11,7 +11,6 @@ interface Client {
   phone: string | null
   status: string
   created_at: string
-  // joined from assignment
   program_name?: string
   last_session?: string | null
 }
@@ -38,6 +37,9 @@ function daysSinceLabel(dateStr: string | null | undefined): string {
 
 const BLANK_FORM = { full_name: '', email: '', phone: '', status: 'active' }
 
+// The URL clients land on when they click the invite email
+const ONBOARDING_URL = `${window.location.origin}/onboarding`
+
 export default function Clients() {
   const { profile } = useAuth()
   const navigate = useNavigate()
@@ -45,10 +47,23 @@ export default function Clients() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+
+  // Add client modal
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  // Post-save: invite prompt
+  const [newClientId, setNewClientId] = useState<string | null>(null)
+  const [newClientEmail, setNewClientEmail] = useState<string | null>(null)
+  const [newClientName, setNewClientName] = useState<string>('')
+  const [showInvitePrompt, setShowInvitePrompt] = useState(false)
+
+  // Inline invite sending on list rows
+  const [sendingInvite, setSendingInvite] = useState<string | null>(null)   // client id
+  const [inviteSent, setInviteSent] = useState<Record<string, boolean>>({})
+  const [inviteError, setInviteError] = useState<Record<string, string>>({})
 
   useEffect(() => { fetchClients() }, [])
 
@@ -62,7 +77,6 @@ export default function Clients() {
 
     if (!clientRows) { setLoading(false); return }
 
-    // Fetch active assignments for all clients
     const ids = clientRows.map(c => c.id)
     const { data: assignments } = await supabase
       .from('client_cycle_assignments')
@@ -70,7 +84,6 @@ export default function Clients() {
       .in('client_id', ids)
       .eq('is_active', true)
 
-    // Fetch last session for each client
     const { data: lastSessions } = await supabase
       .from('sessions')
       .select('client_id, completed_at')
@@ -94,11 +107,14 @@ export default function Clients() {
     setLoading(false)
   }
 
+  // ── Add Client ──────────────────────────────────────────────────────────────
+
   async function handleAddClient(e: React.FormEvent) {
     e.preventDefault()
     if (!form.full_name.trim()) { setError('Name is required'); return }
     setSaving(true)
     setError('')
+
     const insertData: Record<string, unknown> = {
       trainer_id: profile?.id,
       full_name: form.full_name.trim(),
@@ -106,13 +122,59 @@ export default function Clients() {
       status: form.status,
     }
     if (form.phone.trim()) insertData.phone = form.phone.trim()
-    const { error: err } = await supabase.from('clients').insert(insertData)
-    if (err) { setError(err.message); setSaving(false); return }
+
+    const { data: inserted, error: err } = await supabase
+      .from('clients')
+      .insert(insertData)
+      .select('id')
+      .single()
+
+    if (err || !inserted) { setError(err?.message ?? 'Failed to save'); setSaving(false); return }
+
     setSaving(false)
     setShowAdd(false)
-    setForm(BLANK_FORM)
     fetchClients()
+
+    // If they have an email, offer to send invite immediately
+    if (form.email.trim()) {
+      setNewClientId(inserted.id)
+      setNewClientEmail(form.email.trim())
+      setNewClientName(form.full_name.trim())
+      setShowInvitePrompt(true)
+    }
+
+    setForm(BLANK_FORM)
   }
+
+  // ── Send invite (reusable) ──────────────────────────────────────────────────
+
+  async function sendInvite(email: string, clientId: string) {
+    setSendingInvite(clientId)
+    setInviteError(prev => ({ ...prev, [clientId]: '' }))
+
+    const { error: err } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: ONBOARDING_URL,
+        shouldCreateUser: true,
+      },
+    })
+
+    if (err) {
+      setInviteError(prev => ({ ...prev, [clientId]: err.message }))
+    } else {
+      setInviteSent(prev => ({ ...prev, [clientId]: true }))
+      // Update client status to 'invited' if not already active
+      const client = clients.find(c => c.id === clientId)
+      if (client && client.status !== 'active') {
+        await supabase.from('clients').update({ status: 'invited' }).eq('id', clientId)
+        fetchClients()
+      }
+    }
+    setSendingInvite(null)
+  }
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
 
   const filtered = statusFilter === 'all'
     ? clients
@@ -185,52 +247,78 @@ export default function Clients() {
       ) : (
         <div className="flex flex-col gap-2">
           {filtered.map(client => (
-            <button
-              key={client.id}
-              onClick={() => navigate(`/trainer/clients/${client.id}`)}
-              className="bg-[#1C1C1E] border border-[#2C2C2E] hover:border-[#3A3A3C] rounded-xl px-5 py-4 flex items-center gap-4 text-left transition-colors group"
-            >
-              {/* Avatar */}
-              <div className="w-11 h-11 rounded-full bg-[#C9A84C]/15 flex items-center justify-center flex-shrink-0">
-                <span className="font-bebas text-base text-[#C9A84C]">{initials(client.full_name)}</span>
+            <div key={client.id} className="bg-[#1C1C1E] border border-[#2C2C2E] hover:border-[#3A3A3C] rounded-xl transition-colors">
+              {/* Main row — click to open profile */}
+              <div
+                className="px-5 py-4 flex items-center gap-4 cursor-pointer group"
+                onClick={() => navigate(`/trainer/clients/${client.id}`)}
+              >
+                {/* Avatar */}
+                <div className="w-11 h-11 rounded-full bg-[#C9A84C]/15 flex items-center justify-center flex-shrink-0">
+                  <span className="font-bebas text-base text-[#C9A84C]">{initials(client.full_name)}</span>
+                </div>
+
+                {/* Name + email */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-barlow font-semibold text-white group-hover:text-[#C9A84C] transition-colors truncate">
+                    {client.full_name}
+                  </p>
+                  {client.email && (
+                    <p className="font-barlow text-xs text-white/40 truncate mt-0.5">{client.email}</p>
+                  )}
+                </div>
+
+                {/* Status badge */}
+                <span className={`font-barlow text-xs px-2.5 py-1 rounded-full flex-shrink-0 ${STATUS_COLORS[client.status] ?? 'bg-white/10 text-white/40'}`}>
+                  {client.status}
+                </span>
+
+                {/* Program */}
+                <div className="w-44 flex-shrink-0 hidden md:block">
+                  {client.program_name ? (
+                    <p className="font-barlow text-sm text-white/70 truncate">{client.program_name}</p>
+                  ) : (
+                    <p className="font-barlow text-sm text-white/25 italic">No program</p>
+                  )}
+                </div>
+
+                {/* Last session */}
+                <div className="w-28 flex-shrink-0 text-right hidden sm:block">
+                  <p className="font-barlow text-xs text-white/40">{daysSinceLabel(client.last_session)}</p>
+                </div>
+
+                <span className="text-white/20 group-hover:text-white/60 transition-colors flex-shrink-0">›</span>
               </div>
 
-              {/* Name + email */}
-              <div className="flex-1 min-w-0">
-                <p className="font-barlow font-semibold text-white group-hover:text-[#C9A84C] transition-colors truncate">
-                  {client.full_name}
-                </p>
-                {client.email && (
-                  <p className="font-barlow text-xs text-white/40 truncate mt-0.5">{client.email}</p>
-                )}
-              </div>
-
-              {/* Status */}
-              <span className={`font-barlow text-xs px-2.5 py-1 rounded-full flex-shrink-0 ${STATUS_COLORS[client.status] ?? 'bg-white/10 text-white/40'}`}>
-                {client.status}
-              </span>
-
-              {/* Program */}
-              <div className="w-44 flex-shrink-0 hidden md:block">
-                {client.program_name ? (
-                  <p className="font-barlow text-sm text-white/70 truncate">{client.program_name}</p>
-                ) : (
-                  <p className="font-barlow text-sm text-white/25 italic">No program</p>
-                )}
-              </div>
-
-              {/* Last session */}
-              <div className="w-28 flex-shrink-0 text-right hidden sm:block">
-                <p className="font-barlow text-xs text-white/40">{daysSinceLabel(client.last_session)}</p>
-              </div>
-
-              <span className="text-white/20 group-hover:text-white/60 transition-colors flex-shrink-0">›</span>
-            </button>
+              {/* Invite row — only shown for clients with email who aren't active yet */}
+              {client.email && client.status !== 'active' && (
+                <div className="px-5 pb-3 flex items-center gap-3 border-t border-[#2C2C2E]/60">
+                  {inviteSent[client.id] ? (
+                    <p className="font-barlow text-xs text-green-400 py-1">
+                      ✓ Invite sent to {client.email}
+                    </p>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => sendInvite(client.email!, client.id)}
+                        disabled={sendingInvite === client.id}
+                        className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors disabled:opacity-40 py-1"
+                      >
+                        {sendingInvite === client.id ? 'Sending...' : '↗ Send Invite Email'}
+                      </button>
+                      {inviteError[client.id] && (
+                        <p className="font-barlow text-xs text-red-400">{inviteError[client.id]}</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
 
-      {/* Add Client Modal */}
+      {/* ── Add Client Modal ── */}
       {showAdd && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md">
@@ -251,12 +339,15 @@ export default function Clients() {
                   value={form.full_name}
                   onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
                   placeholder="Jane Smith"
+                  autoFocus
                   className="bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-4 py-2.5 font-barlow text-sm text-white placeholder-white/30 outline-none focus:border-[#C9A84C]/50"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="font-barlow text-xs text-white/50 uppercase tracking-wider">Email</label>
+                <label className="font-barlow text-xs text-white/50 uppercase tracking-wider">
+                  Email <span className="text-white/25 normal-case ml-1">— used to send invite</span>
+                </label>
                 <input
                   type="email"
                   value={form.email}
@@ -308,6 +399,58 @@ export default function Clients() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Post-add Invite Prompt ── */}
+      {showInvitePrompt && newClientId && newClientEmail && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm">
+            <div className="px-6 pt-6 pb-5">
+              <div className="w-12 h-12 rounded-full bg-[#C9A84C]/15 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h2 className="font-bebas text-2xl text-white tracking-wide">
+                {newClientName} added!
+              </h2>
+              <p className="font-barlow text-sm text-white/50 mt-1">
+                Send them an invite link so they can set up their account and complete onboarding.
+              </p>
+              <p className="font-barlow text-xs text-white/30 mt-2 bg-[#2C2C2E] px-3 py-2 rounded-lg truncate">
+                {newClientEmail}
+              </p>
+            </div>
+
+            <div className="px-6 pb-5 flex flex-col gap-3">
+              {inviteSent[newClientId] ? (
+                <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3 text-center">
+                  <p className="font-bebas text-lg text-green-400 tracking-wide">Invite Sent!</p>
+                  <p className="font-barlow text-xs text-white/40 mt-0.5">They'll receive an email with a link to get started.</p>
+                </div>
+              ) : (
+                <button
+                  onClick={() => sendInvite(newClientEmail, newClientId)}
+                  disabled={sendingInvite === newClientId}
+                  className="w-full bg-[#C9A84C] text-black font-bebas text-base tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-40"
+                >
+                  {sendingInvite === newClientId ? 'Sending...' : 'Send Invite Email'}
+                </button>
+              )}
+
+              {inviteError[newClientId] && (
+                <p className="font-barlow text-xs text-red-400 text-center">{inviteError[newClientId]}</p>
+              )}
+
+              <button
+                onClick={() => { setShowInvitePrompt(false); setNewClientId(null); setNewClientEmail(null) }}
+                className="w-full font-barlow text-sm text-white/30 hover:text-white/60 transition-colors py-1"
+              >
+                {inviteSent[newClientId] ? 'Done' : 'Skip for now'}
+              </button>
+            </div>
           </div>
         </div>
       )}

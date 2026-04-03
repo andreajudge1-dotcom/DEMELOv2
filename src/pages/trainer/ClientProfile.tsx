@@ -156,6 +156,9 @@ export default function ClientProfile() {
 
   const [activeTab, setActiveTab] = useState<Tab>('Overview')
   const [client, setClient] = useState<Client | null>(null)
+  const [sendingInvite, setSendingInvite] = useState(false)
+  const [inviteSent, setInviteSent] = useState(false)
+  const [inviteError, setInviteError] = useState('')
   const [assignment, setAssignment] = useState<Assignment | null>(null)
   const [workoutDays, setWorkoutDays] = useState<WorkoutDay[]>([])
   const [programHistory, setProgramHistory] = useState<ProgramHistory[]>([])
@@ -256,6 +259,29 @@ export default function ClientProfile() {
     setSavingNote(false)
   }
 
+  async function handleSendInvite() {
+    if (!client?.email) return
+    setSendingInvite(true)
+    setInviteError('')
+    const { error: err } = await supabase.auth.signInWithOtp({
+      email: client.email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/onboarding`,
+        shouldCreateUser: true,
+      },
+    })
+    if (err) {
+      setInviteError(err.message)
+    } else {
+      setInviteSent(true)
+      if (client.status !== 'active') {
+        await supabase.from('clients').update({ status: 'invited' }).eq('id', clientId)
+        setClient(c => c ? { ...c, status: 'invited' } : c)
+      }
+    }
+    setSendingInvite(false)
+  }
+
   // ── Computed ──
   const completedSessions = sessions.filter(s => s.completed_at)
   const lastSession = completedSessions[0] ?? null
@@ -342,17 +368,28 @@ export default function ClientProfile() {
 
           {/* Quick actions */}
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            {/* Invite — only shown if they have an email and aren't active yet */}
+            {client?.email && client.status !== 'active' && (
+              <button
+                onClick={handleSendInvite}
+                disabled={sendingInvite || inviteSent}
+                className={`font-barlow text-sm border rounded-lg px-3 py-2 transition-colors disabled:opacity-50 ${
+                  inviteSent
+                    ? 'border-green-500/30 text-green-400 bg-green-500/10'
+                    : 'border-[#2C2C2E] text-white/60 hover:border-[#3A3A3C] hover:text-white'
+                }`}
+              >
+                {inviteSent ? '✓ Invite Sent' : sendingInvite ? 'Sending...' : '↗ Send Invite'}
+              </button>
+            )}
+            {inviteError && (
+              <p className="font-barlow text-xs text-red-400">{inviteError}</p>
+            )}
             <button
               onClick={() => setActiveTab('Messages')}
               className="font-barlow text-sm text-white/60 border border-[#2C2C2E] rounded-lg px-3 py-2 hover:border-[#3A3A3C] hover:text-white transition-colors"
             >
               Message
-            </button>
-            <button
-              onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
-              className="font-barlow text-sm text-white/60 border border-[#2C2C2E] rounded-lg px-3 py-2 hover:border-[#3A3A3C] hover:text-white transition-colors"
-            >
-              Assign Program
             </button>
             <button
               onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
