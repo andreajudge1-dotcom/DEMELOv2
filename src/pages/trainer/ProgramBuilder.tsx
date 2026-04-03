@@ -67,13 +67,14 @@ export default function ProgramBuilder() {
   const templateId = searchParams.get('templateId')
 
   const [clients, setClients] = useState<Client[]>([])
+  const clientLocked = !!preselectedClientId
+
   const [form, setForm] = useState({
     name: '',
     description: '',
     numWeeks: 4,
     numDays: 4,
     coverPhotoUrl: COVER_OPTIONS[0],
-    isTemplate: false,
     assignToClientId: preselectedClientId ?? '',
     tags: [] as string[],
   })
@@ -128,7 +129,6 @@ export default function ProgramBuilder() {
       numWeeks: cycle.num_weeks ?? 4,
       numDays: cycle.num_days,
       coverPhotoUrl: cycle.cover_photo_url ?? COVER_OPTIONS[0],
-      isTemplate: cycle.is_template,
       assignToClientId: '',
       tags: cycle.tags ?? [],
     })
@@ -226,7 +226,6 @@ export default function ProgramBuilder() {
       numWeeks: newCycle.num_weeks ?? 4,
       numDays: newCycle.num_days,
       coverPhotoUrl: newCycle.cover_photo_url ?? COVER_OPTIONS[0],
-      isTemplate: false,
       assignToClientId: preselectedClientId ?? '',
       tags: newCycle.tags ?? [],
     })
@@ -316,7 +315,7 @@ export default function ProgramBuilder() {
         cover_photo_url: form.coverPhotoUrl,
         num_days: form.numDays,
         num_weeks: form.numWeeks,
-        is_template: form.isTemplate,
+        is_template: false,
         tags: form.tags,
       })
       .select()
@@ -417,21 +416,107 @@ export default function ProgramBuilder() {
     }
 
     if (form.assignToClientId) {
-      const { data: existing } = await supabase
-        .from('client_cycle_assignments')
-        .select('id')
-        .eq('client_id', form.assignToClientId)
-        .eq('cycle_id', programId)
+      // Always create a copy for the client — never assign the library original
+      const { data: srcCycle } = await supabase
+        .from('training_cycles')
+        .select('*')
+        .eq('id', programId)
         .single()
 
-      if (!existing) {
-        await supabase.from('client_cycle_assignments').insert({
-          client_id: form.assignToClientId,
-          cycle_id: programId,
-          trainer_id: profile?.id,
-          is_active: true,
-          next_day_number: 1,
-        })
+      if (srcCycle) {
+        const { data: clientCopy } = await supabase
+          .from('training_cycles')
+          .insert({
+            trainer_id: profile?.id,
+            name: srcCycle.name,
+            description: srcCycle.description ?? null,
+            cover_photo_url: srcCycle.cover_photo_url ?? null,
+            num_days: srcCycle.num_days,
+            num_weeks: srcCycle.num_weeks ?? 4,
+            is_template: false,
+            tags: srcCycle.tags ?? [],
+          })
+          .select()
+          .single()
+
+        if (clientCopy) {
+          // Deep copy workouts → exercises → sets into the client copy
+          const { data: srcWorkouts } = await supabase
+            .from('workouts')
+            .select('id, day_number, name, focus')
+            .eq('cycle_id', programId)
+            .order('day_number')
+
+          for (const w of srcWorkouts ?? []) {
+            const { data: newW } = await supabase
+              .from('workouts')
+              .insert({ cycle_id: clientCopy.id, day_number: w.day_number, name: w.name, focus: w.focus ?? null })
+              .select()
+              .single()
+            if (!newW) continue
+
+            const { data: wes } = await supabase
+              .from('workout_exercises')
+              .select('id, exercise_id, position, superset_group, cue_override, notes')
+              .eq('workout_id', w.id)
+              .order('position')
+
+            for (const we of wes ?? []) {
+              const { data: newWE } = await supabase
+                .from('workout_exercises')
+                .insert({
+                  workout_id: newW.id,
+                  exercise_id: we.exercise_id,
+                  position: we.position,
+                  superset_group: (we as any).superset_group ?? null,
+                  cue_override: (we as any).cue_override ?? null,
+                  notes: we.notes ?? null,
+                })
+                .select()
+                .single()
+              if (!newWE) continue
+
+              const { data: sets } = await supabase
+                .from('workout_set_prescriptions')
+                .select('*')
+                .eq('workout_exercise_id', we.id)
+                .order('set_number')
+
+              if (sets?.length) {
+                await supabase.from('workout_set_prescriptions').insert(
+                  sets.map(s => ({
+                    workout_exercise_id: newWE.id,
+                    set_number: s.set_number,
+                    set_type: s.set_type,
+                    reps: s.reps ?? null,
+                    rpe_target: s.rpe_target ?? null,
+                    load_modifier: s.load_modifier ?? null,
+                    hold_seconds: s.hold_seconds ?? null,
+                    tempo: s.tempo ?? null,
+                    cue: s.cue ?? null,
+                  }))
+                )
+              }
+            }
+          }
+
+          // Deactivate any existing active assignment for this client
+          await supabase
+            .from('client_cycle_assignments')
+            .update({ is_active: false, status: 'completed' })
+            .eq('client_id', form.assignToClientId)
+            .eq('is_active', true)
+
+          // Link the copy to the client
+          await supabase.from('client_cycle_assignments').insert({
+            client_id: form.assignToClientId,
+            cycle_id: clientCopy.id,
+            trainer_id: profile?.id,
+            is_active: true,
+            next_day_number: 1,
+            started_at: new Date().toISOString(),
+          })
+        }
       }
     }
 
@@ -583,18 +668,27 @@ export default function ProgramBuilder() {
           </div>
 
           {/* Assign to client */}
-          {clients.length > 0 && (
-            <div>
-              <label className="font-barlow text-xs text-white/40 uppercase tracking-widest block mb-2">Assign to client (optional)</label>
+          <div>
+            <label className="font-barlow text-xs text-white/40 uppercase tracking-widest block mb-2">
+              Assign to client <span className="normal-case text-white/25 ml-1">— optional</span>
+            </label>
+            {clientLocked ? (
+              <div className="bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-4 py-2.5 font-barlow text-sm text-white/50">
+                {clients.find(c => c.id === form.assignToClientId)?.full_name ?? 'Client'}
+                <span className="text-white/25 ml-2 text-xs">— locked</span>
+              </div>
+            ) : clients.length > 0 ? (
               <Select
                 value={form.assignToClientId}
                 onChange={val => setForm(f => ({ ...f, assignToClientId: val }))}
-                placeholder="No client — save as standalone"
+                placeholder="No client — save to library only"
                 options={clients.map(c => ({ value: c.id, label: c.full_name }))}
                 className="w-full"
               />
-            </div>
-          )}
+            ) : (
+              <p className="font-barlow text-xs text-white/25 italic">No active clients yet — program will save to library</p>
+            )}
+          </div>
 
           {/* Tags */}
           <div>
@@ -621,21 +715,6 @@ export default function ProgramBuilder() {
                   {tag}
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* Save as template */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setForm(f => ({ ...f, isTemplate: !f.isTemplate }))}
-              className={`w-10 h-6 rounded-full transition-colors relative ${form.isTemplate ? 'bg-[#C9A84C]' : 'bg-[#2C2C2E]'}`}
-            >
-              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${form.isTemplate ? 'left-4' : 'left-0.5'}`} />
-            </button>
-            <div>
-              <p className="font-barlow text-sm text-white">Save as template</p>
-              <p className="font-barlow text-xs text-white/30">Reuse this structure for future clients</p>
             </div>
           </div>
 
@@ -930,8 +1009,14 @@ export default function ProgramBuilder() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm overflow-hidden">
             <div className="px-6 pt-6 pb-2">
-              <h2 className="font-bebas text-2xl text-white tracking-wide">Save Program</h2>
-              <p className="font-barlow text-sm text-white/50 mt-1">Would you like to keep editing after saving?</p>
+              <h2 className="font-bebas text-2xl text-white tracking-wide">
+                {form.assignToClientId ? 'Save & Assign' : 'Save to Library'}
+              </h2>
+              <p className="font-barlow text-sm text-white/50 mt-1">
+                {form.assignToClientId
+                  ? `Program saves to your library. A copy will be assigned to ${clients.find(c => c.id === form.assignToClientId)?.full_name ?? 'client'}.`
+                  : 'Program saves to your library. Assign to clients anytime from the Programs page.'}
+              </p>
             </div>
             <div className="px-6 py-5 flex flex-col gap-3">
               <button
@@ -944,7 +1029,7 @@ export default function ProgramBuilder() {
                 onClick={() => handleFinish(true)}
                 className="w-full bg-[#2C2C2E] text-white font-bebas text-base tracking-widest py-3 rounded-xl hover:bg-[#3A3A3C] transition-colors"
               >
-                Save &amp; Exit
+                {form.assignToClientId ? 'Save, Assign & Exit' : 'Save & Exit'}
               </button>
               <button
                 onClick={() => setShowSaveModal(false)}
