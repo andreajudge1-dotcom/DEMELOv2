@@ -66,12 +66,13 @@ create table if not exists clients (
   avatar_url  text,
   status        text not null default 'active' check (status in ('active', 'inactive', 'prospect', 'invited', 'paused')),
   notes         text,
-  goal          text,
-  experience    text,
-  limitations   text,
-  invite_token  uuid default gen_random_uuid(),
-  trainer_notes text,
-  created_at    timestamptz default now()
+  goal                  text,
+  experience            text,
+  limitations           text,
+  invite_token          uuid default gen_random_uuid(),
+  trainer_notes         text,
+  onboarding_completed  boolean default false,
+  created_at            timestamptz default now()
 );
 
 alter table clients enable row level security;
