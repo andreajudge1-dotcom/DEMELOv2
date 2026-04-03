@@ -184,16 +184,10 @@ export default function Clients() {
       )
     }
 
-    // 3. Success — no magic link, client registers themselves
+    // 3. Success — show link screen, trainer closes manually
     setSaving(false)
     setInviteSuccess(true)
-    setTimeout(() => {
-      setInviteSuccess(false)
-      setShowInvite(false)
-      setForm(BLANK_FORM)
-      setExpanded(false)
-      fetchClients()
-    }, 2000)
+    fetchClients()
   }
 
   function closeModal() {
