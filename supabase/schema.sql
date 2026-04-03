@@ -84,6 +84,10 @@ create policy "Trainer manages own clients"
   using (trainer_id = auth.uid())
   with check (trainer_id = auth.uid());
 
+create policy "Trainer inserts own clients"
+  on clients for insert
+  with check (trainer_id = auth.uid());
+
 create policy "Client reads own record"
   on clients for select
   using (profile_id = auth.uid());
