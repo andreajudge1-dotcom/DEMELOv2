@@ -1351,6 +1351,70 @@ function MetricsTab({
   const [editVal, setEditVal] = useState('')
   const [customName, setCustomName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [lastSynced, setLastSynced] = useState<string | null>(null)
+
+  // On mount, auto-sync maxes from completed session data
+  useEffect(() => {
+    syncFromSessions()
+  }, [clientId])
+
+  async function syncFromSessions() {
+    setSyncing(true)
+    try {
+      // Fetch all session_sets with weight > 0, joined through session_exercises → exercises → sessions
+      const { data: sets } = await supabase
+        .from('session_sets')
+        .select(`
+          weight_kg,
+          session_exercises!inner(
+            exercises!inner( name ),
+            sessions!inner( client_id, completed_at )
+          )
+        `)
+        .not('weight_kg', 'is', null)
+        .gt('weight_kg', 0)
+        .eq('session_exercises.sessions.client_id', clientId)
+        .not('session_exercises.sessions.completed_at', 'is', null)
+
+      if (!sets?.length) { setSyncing(false); return }
+
+      // Build map of exercise_name → highest weight_kg
+      const bestMap: Record<string, number> = {}
+      for (const s of sets) {
+        const se = s.session_exercises as any
+        const exerciseName: string = se?.exercises?.name
+        const weight = s.weight_kg as number
+        if (!exerciseName) continue
+        if (!bestMap[exerciseName] || weight > bestMap[exerciseName]) {
+          bestMap[exerciseName] = weight
+        }
+      }
+
+      // Upsert only if the recorded best is higher than what's stored
+      for (const [exerciseName, bestKg] of Object.entries(bestMap)) {
+        const existing = maxes.find(m => m.exercise_name === exerciseName)
+        if (!existing || bestKg > (existing.max_kg ?? 0)) {
+          await supabase.from('training_maxes').upsert(
+            {
+              client_id: clientId,
+              trainer_id: trainerId,
+              exercise_name: exerciseName,
+              max_kg: bestKg,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'client_id,exercise_name' }
+          )
+        }
+      }
+
+      setLastSynced(new Date().toLocaleTimeString())
+      onRefresh()
+    } catch (err) {
+      console.error('Sync error:', err)
+    }
+    setSyncing(false)
+  }
 
   async function saveMax(exerciseName: string, kgVal: string) {
     setSaving(true)
@@ -1379,7 +1443,27 @@ function MetricsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
-        <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-4">Training Maxes</p>
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Training Maxes</p>
+          <div className="flex items-center gap-2">
+            {syncing ? (
+              <span className="font-barlow text-xs text-white/30 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 border border-[#C9A84C]/40 border-t-[#C9A84C] rounded-full animate-spin inline-block" />
+                Syncing...
+              </span>
+            ) : (
+              <>
+                {lastSynced && <span className="font-barlow text-xs text-white/20">Synced {lastSynced}</span>}
+                <button
+                  onClick={syncFromSessions}
+                  className="font-barlow text-xs text-white/30 hover:text-[#C9A84C] transition-colors"
+                >
+                  ↻ Sync from sessions
+                </button>
+              </>
+            )}
+          </div>
+        </div>
         <div className="flex flex-col divide-y divide-[#2C2C2E]">
           {allLifts.map(liftName => {
             const max = maxes.find(m => m.exercise_name === liftName)
