@@ -18,7 +18,11 @@ export default function Register() {
     setLoading(true)
     const { error } = await signUp(email, password, fullName, role)
     if (error) {
-      setError(error.message)
+      if (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('already exists')) {
+        setError('An account with this email already exists. Try signing in instead.')
+      } else {
+        setError(error.message)
+      }
       setLoading(false)
       return
     }
