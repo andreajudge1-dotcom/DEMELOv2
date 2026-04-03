@@ -16,9 +16,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Missing required fields' })
   }
 
-  const apiKey = process.env.RESEND_API_KEY
+  const apiKey = process.env.RESEND_KEY
   console.log('API key present:', !!apiKey)
-  console.log('Env var keys:', Object.keys(process.env).filter(k => !k.includes('SECRET') && !k.includes('TOKEN') && !k.includes('KEY') && !k.includes('PASSWORD')).join(', '))
+  console.log('Env var keys:', Object.keys(process.env).join(', '))
 
   if (!apiKey) {
     return res.status(500).json({ error: 'RESEND_API_KEY not configured' })
