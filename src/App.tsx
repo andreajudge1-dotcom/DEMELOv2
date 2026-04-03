@@ -17,6 +17,8 @@ import Settings from './pages/trainer/Settings'
 import Today from './pages/client/Today'
 import Progress from './pages/client/Progress'
 import ClientMessages from './pages/client/Messages'
+import Onboarding from './pages/client/Onboarding'
+import ClientHome from './pages/client/Home'
 
 function AppRoutes() {
   const { loading } = useAuth()
@@ -33,6 +35,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/onboarding" element={<Onboarding />} />
       <Route path="/trainer" element={<TrainerLayout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
@@ -49,6 +52,7 @@ function AppRoutes() {
       </Route>
       <Route path="/client" element={<ClientLayout />}>
         <Route index element={<Navigate to="today" replace />} />
+        <Route path="home" element={<ClientHome />} />
         <Route path="today" element={<Today />} />
         <Route path="progress" element={<Progress />} />
         <Route path="messages" element={<ClientMessages />} />
