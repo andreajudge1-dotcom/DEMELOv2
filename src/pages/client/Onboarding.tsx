@@ -30,9 +30,31 @@ interface ClientInfo {
   email: string
   trainer_id: string
   trainer_name: string
-  goal: string | null
-  experience_level: string | null
-  limitations: string | null
+  prefilled_goal: string | null
+  prefilled_experience: string | null
+  prefilled_limitations: string | null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step indicator — 5 dots
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StepDots({ current }: { current: number }) {
+  return (
+    <div className="flex items-center gap-2.5 justify-center mb-10">
+      {[1, 2, 3, 4, 5].map(s => (
+        <div
+          key={s}
+          className="w-2.5 h-2.5 rounded-full border transition-all duration-300"
+          style={{
+            backgroundColor: s <= current ? '#C9A84C' : 'transparent',
+            borderColor: s <= current ? '#C9A84C' : '#3A3A3C',
+            transform: s === current ? 'scale(1.2)' : 'scale(1)',
+          }}
+        />
+      ))}
+    </div>
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +82,7 @@ export default function Onboarding() {
   const [goal, setGoal] = useState('')
   const [experience, setExperience] = useState('')
   const [limitations, setLimitations] = useState('')
+  const [editingAbout, setEditingAbout] = useState(false)
 
   // ── Step 4 ──
   const [squat, setSquat] = useState('')
@@ -71,7 +94,7 @@ export default function Onboarding() {
   const [notifTime, setNotifTime] = useState('08:00')
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Mount: validate invite token, establish session, load client info
+  // Mount: detect auth tokens in URL, establish session
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -104,58 +127,47 @@ export default function Onboarding() {
     let email: string | null = null
 
     if (code) {
-      // PKCE flow — exchange code to establish session
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-      if (error || !data.session) {
-        navigate('/login')
-        return
-      }
+      if (error || !data.session) { navigate('/login'); return }
       email = data.session.user.email ?? null
 
-    } else if (tokenHash && typeParam === 'invite') {
-      // Token-hash flow (newer Supabase format)
+    } else if (tokenHash && (typeParam === 'invite' || typeParam === 'magiclink' || typeParam === 'email')) {
       const { data, error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
-        type: 'invite',
+        type: (typeParam as any) ?? 'invite',
       })
-      if (error || !data.session) {
-        navigate('/login')
-        return
-      }
+      if (error || !data.session) { navigate('/login'); return }
       email = data.session.user.email ?? null
 
-    } else if (accessToken && hashType === 'invite') {
-      // Legacy hash-based invite
+    } else if (accessToken && (hashType === 'invite' || hashType === 'magiclink')) {
       const { data, error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken ?? '',
       })
-      if (error || !data.session) {
-        navigate('/login')
-        return
-      }
+      if (error || !data.session) { navigate('/login'); return }
       email = data.session.user.email ?? null
 
     } else {
-      // No valid invite token in URL
-      navigate('/login')
-      return
+      // No token — wait briefly in case session was already set
+      await new Promise(res => setTimeout(res, 500))
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user?.email) {
+        email = session.user.email
+      } else {
+        navigate('/login')
+        return
+      }
     }
 
-    if (!email) {
-      navigate('/login')
-      return
-    }
-
+    if (!email) { navigate('/login'); return }
     await loadClientInfo(email)
     setChecking(false)
   }
 
   async function loadClientInfo(email: string) {
-    // Fetch client record — requires the email-match RLS policy
     const { data: clientRow } = await supabase
       .from('clients')
-      .select('id, full_name, email, trainer_id, goal, experience_level, limitations')
+      .select('id, full_name, email, trainer_id, goal, experience, limitations')
       .eq('email', email)
       .maybeSingle()
 
@@ -169,20 +181,22 @@ export default function Onboarding() {
       trainerName = trainerRow?.full_name ?? 'Your trainer'
     }
 
-    setClientInfo({
+    const info: ClientInfo = {
       id: clientRow?.id ?? '',
       full_name: clientRow?.full_name ?? email.split('@')[0],
       email,
       trainer_id: clientRow?.trainer_id ?? '',
       trainer_name: trainerName,
-      goal: clientRow?.goal ?? null,
-      experience_level: clientRow?.experience_level ?? null,
-      limitations: clientRow?.limitations ?? null,
-    })
+      prefilled_goal: clientRow?.goal ?? null,
+      prefilled_experience: clientRow?.experience ?? null,
+      prefilled_limitations: clientRow?.limitations ?? null,
+    }
 
-    // Pre-fill step 3 if Josh already entered these
+    setClientInfo(info)
+
+    // Pre-fill step 3 state if trainer already entered these
     if (clientRow?.goal) setGoal(clientRow.goal)
-    if (clientRow?.experience_level) setExperience(clientRow.experience_level)
+    if (clientRow?.experience) setExperience(clientRow.experience)
     if (clientRow?.limitations) setLimitations(clientRow.limitations)
   }
 
@@ -192,44 +206,42 @@ export default function Onboarding() {
 
   async function handleCreateAccount() {
     setAccountError('')
-    if (password.length < 8) {
-      setAccountError('Password must be at least 8 characters.')
-      return
-    }
-    if (password !== confirmPassword) {
-      setAccountError('Passwords do not match.')
-      return
-    }
+    if (password.length < 8) { setAccountError('Password must be at least 8 characters.'); return }
+    if (password !== confirmPassword) { setAccountError('Passwords do not match.'); return }
 
     setCreatingAccount(true)
 
-    // Set password for this invited user
     const { error: pwErr } = await supabase.auth.updateUser({ password })
-    if (pwErr) {
-      setAccountError(pwErr.message)
-      setCreatingAccount(false)
-      return
-    }
+    if (pwErr) { setAccountError(pwErr.message); setCreatingAccount(false); return }
 
-    // Get the now-authenticated user and link their profile to the client record
     const { data: { user } } = await supabase.auth.getUser()
     if (user && clientInfo?.id) {
-      // Upsert profile row (role = client)
       await supabase.from('profiles').upsert({
         id: user.id,
         full_name: clientInfo.full_name,
         role: 'client',
       }, { onConflict: 'id' })
 
-      // Link auth user to the client row
-      await supabase
-        .from('clients')
-        .update({ profile_id: user.id })
-        .eq('id', clientInfo.id)
+      await supabase.from('clients').update({ profile_id: user.id }).eq('id', clientInfo.id)
     }
 
     setCreatingAccount(false)
     setStep(3)
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Step 3 — save About You to clients table
+  // ─────────────────────────────────────────────────────────────────────────
+
+  async function handleAboutNext() {
+    if (clientInfo?.id) {
+      await supabase.from('clients').update({
+        goal: goal || null,
+        experience: experience || null,
+        limitations: limitations || null,
+      }).eq('id', clientInfo.id)
+    }
+    setStep(4)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -239,12 +251,10 @@ export default function Onboarding() {
   async function runBackgroundActions() {
     if (!clientInfo?.id) return
 
-    // 1. Update client status → active + save profile answers + notification prefs
+    // 1. Update client — active + onboarding_completed + notification prefs
     await supabase.from('clients').update({
       status: 'active',
-      goal: goal || null,
-      experience_level: experience || null,
-      limitations: limitations || null,
+      onboarding_completed: true,
       notification_preference: notifEnabled,
       notification_time: notifEnabled ? notifTime : null,
     }).eq('id', clientInfo.id)
@@ -254,7 +264,7 @@ export default function Onboarding() {
       { exercise_name: 'Squat', lbs: squat },
       { exercise_name: 'Bench Press', lbs: bench },
       { exercise_name: 'Deadlift', lbs: deadlift },
-    ].filter(e => e.lbs.trim() !== '')
+    ].filter(e => e.lbs.trim() !== '' && !isNaN(parseFloat(e.lbs)))
 
     for (const entry of maxEntries) {
       const kg = Math.round((parseFloat(entry.lbs) / 2.2046) * 10) / 10
@@ -285,6 +295,7 @@ export default function Onboarding() {
 
   const firstName = clientInfo?.full_name.split(' ')[0] ?? 'there'
   const trainerName = clientInfo?.trainer_name ?? 'Your trainer'
+  const trainerPrefilledAbout = !!(clientInfo?.prefilled_goal || clientInfo?.prefilled_experience)
 
   // ─────────────────────────────────────────────────────────────────────────
   // Loading gate
@@ -293,7 +304,10 @@ export default function Onboarding() {
   if (checking) {
     return (
       <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
-        <p className="font-bebas text-xl text-[#C9A84C] tracking-widest">LOADING...</p>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-[#C9A84C]/30 border-t-[#C9A84C] rounded-full animate-spin" />
+          <p className="font-barlow text-sm text-white/30">Setting up your profile...</p>
+        </div>
       </div>
     )
   }
@@ -308,25 +322,11 @@ export default function Onboarding() {
 
         {/* Logo */}
         <p className="font-bebas text-2xl text-[#C9A84C] tracking-[0.3em] text-center mb-10">
-          MYOS
+          Z6
         </p>
 
-        {/* Step indicator — hide on final screen */}
-        {step < 6 && (
-          <div className="flex items-center gap-1.5 justify-center mb-10">
-            {[1, 2, 3, 4, 5].map(s => (
-              <div
-                key={s}
-                className="h-1 rounded-full transition-all duration-300"
-                style={{
-                  width: s === step ? 32 : s < step ? 24 : 16,
-                  backgroundColor: s <= step ? '#C9A84C' : '#2C2C2E',
-                  opacity: s === step ? 1 : s < step ? 0.7 : 1,
-                }}
-              />
-            ))}
-          </div>
-        )}
+        {/* Step dots — hide on ready screen */}
+        {step < 6 && <StepDots current={step} />}
 
         {/* ── STEP 1 — WELCOME ── */}
         {step === 1 && (
@@ -341,12 +341,12 @@ export default function Onboarding() {
                 Hey {firstName}.
               </h1>
               <p className="font-barlow text-white/50 text-base mt-3 leading-relaxed">
-                {trainerName} has set up your training<br />profile on MYOS.
+                {trainerName} has set up your training<br />profile on Z6.
               </p>
             </div>
             <button
               onClick={() => setStep(2)}
-              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors mt-2"
+              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors mt-2 min-h-[56px]"
             >
               Get Started
             </button>
@@ -384,6 +384,7 @@ export default function Onboarding() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
+                autoFocus
                 autoComplete="new-password"
                 className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors"
               />
@@ -405,7 +406,7 @@ export default function Onboarding() {
             <button
               onClick={handleCreateAccount}
               disabled={creatingAccount || !password || !confirmPassword}
-              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors disabled:opacity-40 mt-2"
+              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors disabled:opacity-40 mt-2 min-h-[56px]"
             >
               {creatingAccount ? 'Creating Account...' : 'Create Account'}
             </button>
@@ -422,63 +423,102 @@ export default function Onboarding() {
               </p>
             </div>
 
-            {/* Main Goal */}
-            <div>
-              <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Main Goal</p>
-              <div className="flex flex-wrap gap-2">
-                {GOALS.map(g => (
+            {/* If trainer pre-filled and not editing — show confirmation */}
+            {trainerPrefilledAbout && !editingAbout ? (
+              <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-5 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Pre-filled by {trainerName}</p>
                   <button
-                    key={g}
-                    onClick={() => setGoal(g === goal ? '' : g)}
-                    className={`px-4 py-2 rounded-full font-barlow text-sm border transition-colors ${
-                      goal === g
-                        ? 'bg-[#C9A84C] text-black border-[#C9A84C]'
-                        : 'bg-transparent text-white/60 border-[#3A3A3C] hover:border-[#C9A84C]/50 hover:text-white'
-                    }`}
+                    onClick={() => setEditingAbout(true)}
+                    className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors"
                   >
-                    {g}
+                    Edit
                   </button>
-                ))}
+                </div>
+                {goal && (
+                  <div>
+                    <p className="font-barlow text-xs text-white/30 mb-1">Goal</p>
+                    <span className="bg-[#C9A84C]/15 text-[#C9A84C] font-barlow text-sm px-3 py-1.5 rounded-full">
+                      {goal}
+                    </span>
+                  </div>
+                )}
+                {experience && (
+                  <div>
+                    <p className="font-barlow text-xs text-white/30 mb-1">Experience</p>
+                    <span className="bg-[#C9A84C]/15 text-[#C9A84C] font-barlow text-sm px-3 py-1.5 rounded-full">
+                      {experience}
+                    </span>
+                  </div>
+                )}
+                {limitations && (
+                  <div>
+                    <p className="font-barlow text-xs text-white/30 mb-1">Limitations</p>
+                    <p className="font-barlow text-sm text-white/70">{limitations}</p>
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Main Goal */}
+                <div>
+                  <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Main Goal</p>
+                  <div className="flex flex-wrap gap-2">
+                    {GOALS.map(g => (
+                      <button
+                        key={g}
+                        onClick={() => setGoal(g === goal ? '' : g)}
+                        className="px-4 py-2.5 rounded-full font-barlow text-sm border transition-colors min-h-[44px]"
+                        style={goal === g
+                          ? { background: '#C9A84C', color: '#000', borderColor: '#C9A84C' }
+                          : { background: 'transparent', color: 'rgba(255,255,255,0.6)', borderColor: '#3A3A3C' }
+                        }
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            {/* Training Experience */}
-            <div>
-              <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Training Experience</p>
-              <div className="flex flex-wrap gap-2">
-                {EXPERIENCE_LEVELS.map(e => (
-                  <button
-                    key={e}
-                    onClick={() => setExperience(e === experience ? '' : e)}
-                    className={`px-4 py-2 rounded-full font-barlow text-sm border transition-colors ${
-                      experience === e
-                        ? 'bg-[#C9A84C] text-black border-[#C9A84C]'
-                        : 'bg-transparent text-white/60 border-[#3A3A3C] hover:border-[#C9A84C]/50 hover:text-white'
-                    }`}
-                  >
-                    {e}
-                  </button>
-                ))}
-              </div>
-            </div>
+                {/* Experience */}
+                <div>
+                  <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Training Experience</p>
+                  <div className="flex flex-wrap gap-2">
+                    {EXPERIENCE_LEVELS.map(e => (
+                      <button
+                        key={e}
+                        onClick={() => setExperience(e === experience ? '' : e)}
+                        className="px-4 py-2.5 rounded-full font-barlow text-sm border transition-colors min-h-[44px]"
+                        style={experience === e
+                          ? { background: '#C9A84C', color: '#000', borderColor: '#C9A84C' }
+                          : { background: 'transparent', color: 'rgba(255,255,255,0.6)', borderColor: '#3A3A3C' }
+                        }
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            {/* Injuries / limitations */}
-            <div>
-              <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">
-                Injuries or Limitations <span className="normal-case text-white/25 ml-1">— optional</span>
-              </p>
-              <textarea
-                value={limitations}
-                onChange={e => setLimitations(e.target.value)}
-                placeholder="Anything Josh should know about when building your program"
-                rows={3}
-                className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors resize-none"
-              />
-            </div>
+                {/* Limitations */}
+                <div>
+                  <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">
+                    Injuries or Limitations <span className="normal-case text-white/25 ml-1">— optional</span>
+                  </p>
+                  <textarea
+                    value={limitations}
+                    onChange={e => setLimitations(e.target.value)}
+                    placeholder="Anything your coach should know when building your program"
+                    rows={3}
+                    className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors resize-none"
+                  />
+                </div>
+              </>
+            )}
 
             <button
-              onClick={() => setStep(4)}
-              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors mt-1"
+              onClick={handleAboutNext}
+              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors min-h-[56px]"
             >
               Next
             </button>
@@ -491,7 +531,7 @@ export default function Onboarding() {
             <div>
               <h1 className="font-bebas text-4xl text-white tracking-wide">Your Best Lifts</h1>
               <p className="font-barlow text-white/40 text-sm mt-1">
-                Not sure? Enter your best guess — {trainerName} can update these.
+                Not sure? Enter your best guess — {trainerName} can always update these.
               </p>
             </div>
 
@@ -509,6 +549,7 @@ export default function Onboarding() {
                   value={val}
                   onChange={e => set(e.target.value)}
                   placeholder="e.g. 225"
+                  min="0"
                   className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors"
                 />
               </div>
@@ -516,13 +557,13 @@ export default function Onboarding() {
 
             <button
               onClick={() => setStep(5)}
-              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors mt-2"
+              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors mt-2 min-h-[56px]"
             >
               Next
             </button>
             <button
               onClick={() => { setSquat(''); setBench(''); setDeadlift(''); setStep(5) }}
-              className="w-full font-barlow text-sm text-white/30 hover:text-white/60 transition-colors py-2"
+              className="w-full font-barlow text-sm text-white/30 hover:text-white/60 transition-colors py-3 min-h-[44px]"
             >
               Skip for now
             </button>
@@ -543,16 +584,14 @@ export default function Onboarding() {
                   <p className="font-barlow font-semibold text-white text-sm">Training day reminders</p>
                   <p className="font-barlow text-xs text-white/35 mt-0.5">We'll notify you on your scheduled days</p>
                 </div>
-                {/* Toggle */}
                 <button
                   onClick={() => setNotifEnabled(v => !v)}
-                  className={`relative w-12 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${
-                    notifEnabled ? 'bg-[#C9A84C]' : 'bg-[#3A3A3C]'
-                  }`}
+                  className="relative w-12 h-6 rounded-full flex-shrink-0 transition-colors duration-200"
+                  style={{ background: notifEnabled ? '#C9A84C' : '#3A3A3C' }}
                   aria-label="Toggle reminders"
                 >
                   <span
-                    className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200"
+                    className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all duration-200"
                     style={{ left: notifEnabled ? 28 : 4 }}
                   />
                 </button>
@@ -565,7 +604,7 @@ export default function Onboarding() {
                     type="time"
                     value={notifTime}
                     onChange={e => setNotifTime(e.target.value)}
-                    className="bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-3 py-2 font-barlow text-sm text-white outline-none focus:border-[#C9A84C]/50 transition-colors"
+                    className="bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-3 py-2.5 font-barlow text-sm text-white outline-none focus:border-[#C9A84C]/50 transition-colors"
                   />
                 </div>
               )}
@@ -573,7 +612,7 @@ export default function Onboarding() {
 
             <button
               onClick={() => setStep(6)}
-              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors"
+              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors min-h-[56px]"
             >
               Next
             </button>
@@ -582,21 +621,16 @@ export default function Onboarding() {
 
         {/* ── STEP 6 — READY ── */}
         {step === 6 && (
-          <div
-            className="flex flex-col items-center text-center gap-6 cursor-pointer"
-            onClick={() => navigate('/client/home')}
-          >
-            {/* Icon */}
-            <div className="w-24 h-24 rounded-full bg-[#C9A84C]/15 flex items-center justify-center">
-              <svg
-                className="w-12 h-12 text-[#C9A84C]"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.75}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-              </svg>
+          <div className="flex flex-col items-center text-center gap-8 pt-4">
+            {/* Animated pulse rings */}
+            <div className="relative w-28 h-28 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-[#C9A84C]/10 animate-ping" style={{ animationDuration: '2s' }} />
+              <div className="absolute inset-3 rounded-full bg-[#C9A84C]/10 animate-ping" style={{ animationDuration: '2s', animationDelay: '0.5s' }} />
+              <div className="relative w-20 h-20 rounded-full bg-[#C9A84C]/20 flex items-center justify-center">
+                <svg className="w-10 h-10 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                </svg>
+              </div>
             </div>
 
             <div>
@@ -604,11 +638,22 @@ export default function Onboarding() {
                 You're all set,<br />{firstName}.
               </h1>
               <p className="font-barlow text-white/50 text-base mt-4 leading-relaxed max-w-sm">
-                {trainerName} is reviewing your profile and will assign your program shortly. You'll get a notification when you're ready to start training.
+                {trainerName} is reviewing your profile and will assign your program shortly.
               </p>
             </div>
 
-            <p className="font-barlow text-xs text-white/20 mt-4">Tap anywhere to continue</p>
+            {/* Pulse dots */}
+            <div className="flex items-center gap-2 mt-2">
+              {[0, 300, 600].map(delay => (
+                <div
+                  key={delay}
+                  className="w-2 h-2 rounded-full bg-[#C9A84C]/50 animate-pulse"
+                  style={{ animationDelay: `${delay}ms` }}
+                />
+              ))}
+            </div>
+
+            <p className="font-barlow text-xs text-white/20">Taking you to your dashboard...</p>
           </div>
         )}
 

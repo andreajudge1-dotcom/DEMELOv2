@@ -71,8 +71,10 @@ create table if not exists clients (
   limitations           text,
   invite_token          uuid default gen_random_uuid(),
   trainer_notes         text,
-  onboarding_completed  boolean default false,
-  created_at            timestamptz default now()
+  onboarding_completed       boolean default false,
+  notification_preference    boolean default true,
+  notification_time          text default '08:00',
+  created_at                 timestamptz default now()
 );
 
 alter table clients enable row level security;
