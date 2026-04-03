@@ -64,19 +64,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signUp(email: string, password: string, fullName: string, role: 'trainer' | 'client') {
-    // Always sign up then immediately sign in to guarantee a session
-    const { error: signUpErr } = await supabase.auth.signUp({ email, password })
-    if (signUpErr && !signUpErr.message.toLowerCase().includes('already registered')) {
-      return { error: signUpErr }
+    // Try sign-in first — if it works the account already exists (skip signUp to avoid magic link emails)
+    const { data: existingSignIn } = await supabase.auth.signInWithPassword({ email, password })
+    if (!existingSignIn.user) {
+      // Account doesn't exist yet — create it
+      const { error: signUpErr } = await supabase.auth.signUp({ email, password })
+      if (signUpErr) return { error: signUpErr }
+
+      // Now sign in to get a guaranteed session
+      const { data: newSignIn, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInErr || !newSignIn.user) {
+        return { error: signInErr ?? new Error('Could not sign in after registration') }
+      }
     }
 
-    // Sign in to get a guaranteed session
-    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
-    if (signInErr || !signInData.user) {
-      return { error: signInErr ?? new Error('Could not sign in after registration') }
-    }
+    // At this point we have a valid session — get the current user
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: new Error('Could not retrieve user after sign in') }
 
-    const uid = signInData.user.id
+    const uid = user.id
     await supabase.from('profiles').upsert({ id: uid, full_name: fullName, role }, { onConflict: 'id' })
     if (role === 'trainer') await supabase.from('trainers').upsert({ id: uid, business_name: fullName }, { onConflict: 'id' })
     return { error: null }
