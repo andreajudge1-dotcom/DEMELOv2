@@ -168,6 +168,8 @@ export default function ClientProfile() {
   const [loading, setLoading] = useState(true)
   const [stickyNote, setStickyNote] = useState('')
   const [savingNote, setSavingNote] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const loadSessions = useCallback(async (cid: string) => {
     const { data } = await supabase
@@ -256,6 +258,13 @@ export default function ClientProfile() {
     setSavingNote(true)
     await supabase.from('clients').update({ notes: stickyNote }).eq('id', clientId)
     setSavingNote(false)
+  }
+
+  async function handleDeleteClient() {
+    if (!clientId) return
+    setDeleting(true)
+    await supabase.from('clients').delete().eq('id', clientId)
+    navigate('/trainer/clients')
   }
 
   async function handleSendInvite() {
@@ -396,9 +405,48 @@ export default function ClientProfile() {
             >
               Build Program
             </button>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="font-barlow text-sm text-red-400/60 hover:text-red-400 border border-red-500/20 hover:border-red-500/40 rounded-lg px-3 py-2 transition-colors"
+            >
+              Delete
+            </button>
           </div>
         </div>
       </div>
+
+      {/* ── Delete Confirmation Modal ── */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-6">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
+              <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+            </div>
+            <h2 className="font-bebas text-2xl text-white tracking-wide">Delete {client.full_name}?</h2>
+            <p className="font-barlow text-sm text-white/50 mt-2">
+              This will permanently delete this client and all their data — sessions, programs, check-ins, and messages. This cannot be undone.
+            </p>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="flex-1 font-barlow text-sm text-white/40 border border-[#2C2C2E] rounded-xl py-2.5 hover:text-white hover:border-[#3A3A3C] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteClient}
+                disabled={deleting}
+                className="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-bebas text-sm tracking-widest py-2.5 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Tabs ── */}
       <div className="flex gap-0 mb-6 border-b border-[#2C2C2E] overflow-x-auto">
