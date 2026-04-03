@@ -64,23 +64,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signUp(email: string, password: string, fullName: string, role: 'trainer' | 'client') {
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    if (error) return { error }
-
-    // data.user is null when email confirmation is required — sign in immediately instead
-    const userId = data.user?.id ?? data.session?.user?.id
-    if (!userId) {
-      // Try signing in right away in case the account was just created
-      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInErr || !signInData.user) return { error: signInErr ?? new Error('Could not create account') }
-      const uid = signInData.user.id
-      await supabase.from('profiles').upsert({ id: uid, full_name: fullName, role })
-      if (role === 'trainer') await supabase.from('trainers').upsert({ id: uid, business_name: fullName })
-      return { error: null }
+    // Always sign up then immediately sign in to guarantee a session
+    const { error: signUpErr } = await supabase.auth.signUp({ email, password })
+    if (signUpErr && !signUpErr.message.toLowerCase().includes('already registered')) {
+      return { error: signUpErr }
     }
 
-    await supabase.from('profiles').upsert({ id: userId, full_name: fullName, role })
-    if (role === 'trainer') await supabase.from('trainers').upsert({ id: userId, business_name: fullName })
+    // Sign in to get a guaranteed session
+    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInErr || !signInData.user) {
+      return { error: signInErr ?? new Error('Could not sign in after registration') }
+    }
+
+    const uid = signInData.user.id
+    await supabase.from('profiles').upsert({ id: uid, full_name: fullName, role }, { onConflict: 'id' })
+    if (role === 'trainer') await supabase.from('trainers').upsert({ id: uid, business_name: fullName }, { onConflict: 'id' })
     return { error: null }
   }
 

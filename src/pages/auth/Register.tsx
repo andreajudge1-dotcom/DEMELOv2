@@ -33,9 +33,10 @@ export default function Register() {
       return
     }
 
-    // Client — check if a trainer pre-created a client record for this email
-    // and link it to this new auth account
-    const { data: { user } } = await supabase.auth.getUser()
+    // Client — get the current session (guaranteed by signUp flow)
+    const { data: sessionData } = await supabase.auth.getSession()
+    const user = sessionData.session?.user
+
     if (user) {
       const { data: clientRow } = await supabase
         .from('clients')
@@ -44,10 +45,7 @@ export default function Register() {
         .maybeSingle()
 
       if (clientRow) {
-        // Link this auth user to the existing client record
         await supabase.from('clients').update({ profile_id: user.id }).eq('id', clientRow.id)
-        // Upsert profile
-        await supabase.from('profiles').upsert({ id: user.id, full_name: fullName, role: 'client' }, { onConflict: 'id' })
         navigate('/onboarding')
         return
       }
