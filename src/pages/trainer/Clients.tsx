@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import AutocompleteSearch from '../../components/AutocompleteSearch'
 
 interface Client {
   id: string
@@ -58,6 +59,9 @@ export default function Clients() {
   const [newClientEmail, setNewClientEmail] = useState<string | null>(null)
   const [newClientName, setNewClientName] = useState<string>('')
   const [showInvitePrompt, setShowInvitePrompt] = useState(false)
+
+  // Client search
+  const [searchedClientId, setSearchedClientId] = useState<string | null>(null)
 
   // Inline invite sending on list rows
   const [sendingInvite, setSendingInvite] = useState<string | null>(null)   // client id
@@ -173,11 +177,21 @@ export default function Clients() {
     setSendingInvite(null)
   }
 
+  // ── Search fetch (used by AutocompleteSearch) ─────────────────────────────
+
+  async function fetchClientResults(query: string) {
+    return clients
+      .filter(c => c.full_name.toLowerCase().includes(query.toLowerCase()))
+      .map(c => ({ id: c.id, name: c.full_name }))
+  }
+
   // ── Derived ─────────────────────────────────────────────────────────────────
 
-  const filtered = statusFilter === 'all'
-    ? clients
-    : clients.filter(c => c.status === statusFilter)
+  const filtered = (() => {
+    let list = statusFilter === 'all' ? clients : clients.filter(c => c.status === statusFilter)
+    if (searchedClientId) list = list.filter(c => c.id === searchedClientId)
+    return list
+  })()
 
   const counts = {
     all: clients.length,
@@ -207,6 +221,25 @@ export default function Clients() {
             + Add Client
           </button>
         </div>
+      </div>
+
+      {/* Search */}
+      <div className="mb-4">
+        <AutocompleteSearch
+          placeholder="Search clients by name..."
+          fetchResults={fetchClientResults}
+          onSelect={item => setSearchedClientId(item.id)}
+          selectedValue=""
+          className="max-w-sm"
+        />
+        {searchedClientId && (
+          <button
+            onClick={() => setSearchedClientId(null)}
+            className="mt-1.5 font-barlow text-xs text-white/30 hover:text-white/60 transition-colors"
+          >
+            ✕ Clear search
+          </button>
+        )}
       </div>
 
       {/* Status filter tabs */}
