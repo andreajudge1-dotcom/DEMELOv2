@@ -37,6 +37,7 @@ const EXPERIENCE_OPTIONS = [
 const BLANK_FORM = {
   full_name: '',
   email: '',
+  phone: '',
   goal: '',
   experience: '',
   limitations: '',
