@@ -678,9 +678,26 @@ function ProgramTab({
   const [libraryPrograms, setLibraryPrograms] = useState<LibraryProgram[]>([])
   const [loadingLibrary, setLoadingLibrary] = useState(false)
   const [assigning, setAssigning] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [activeTag, setActiveTag] = useState<string | null>(null)
+
+  // All unique tags across the library
+  const allTags = Array.from(new Set(libraryPrograms.flatMap(p => p.tags ?? []))).sort()
+
+  // Filtered list based on search text + active tag
+  const filteredPrograms = libraryPrograms.filter(p => {
+    const q = search.toLowerCase()
+    const matchesSearch = !q ||
+      p.name.toLowerCase().includes(q) ||
+      (p.tags ?? []).some(t => t.toLowerCase().includes(q))
+    const matchesTag = !activeTag || (p.tags ?? []).includes(activeTag)
+    return matchesSearch && matchesTag
+  })
 
   async function openAssignModal() {
     setShowAssignModal(true)
+    setSearch('')
+    setActiveTag(null)
     setLoadingLibrary(true)
     const { data } = await supabase
       .from('training_cycles')
@@ -802,8 +819,10 @@ function ProgramTab({
       {/* Assign from Library modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-[#2C2C2E]">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md max-h-[85vh] flex flex-col">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#2C2C2E]">
               <h2 className="font-bebas text-xl text-white tracking-wide">Assign Program</h2>
               <button
                 onClick={() => setShowAssignModal(false)}
@@ -811,17 +830,53 @@ function ProgramTab({
               >×</button>
             </div>
 
+            {/* Search + tag filters */}
+            {!loadingLibrary && libraryPrograms.length > 0 && (
+              <div className="px-4 pt-3 pb-2 flex flex-col gap-2 border-b border-[#2C2C2E]">
+                {/* Search input */}
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search by name or tag..."
+                  autoFocus
+                  className="w-full bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-3 py-2 font-barlow text-sm text-white placeholder-white/30 outline-none focus:border-[#C9A84C]/50"
+                />
+                {/* Tag pills */}
+                {allTags.length > 0 && (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {allTags.map(tag => (
+                      <button
+                        key={tag}
+                        onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                        className={`font-barlow text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          activeTag === tag
+                            ? 'bg-[#C9A84C] text-black border-[#C9A84C]'
+                            : 'bg-transparent text-white/50 border-[#3A3A3C] hover:border-[#C9A84C]/50 hover:text-white/80'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Program list */}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
               {loadingLibrary ? (
                 <p className="font-barlow text-sm text-white/40 text-center py-8">Loading library...</p>
               ) : libraryPrograms.length === 0 ? (
                 <p className="font-barlow text-sm text-white/40 text-center py-8 italic">No programs in library yet.</p>
+              ) : filteredPrograms.length === 0 ? (
+                <p className="font-barlow text-sm text-white/40 text-center py-8 italic">No programs match your search.</p>
               ) : (
-                libraryPrograms.map(p => (
+                filteredPrograms.map(p => (
                   <button
                     key={p.id}
                     onClick={() => assignProgram(p)}
-                    disabled={assigning === p.id}
+                    disabled={!!assigning}
                     className="flex items-center gap-4 p-4 bg-[#2C2C2E] hover:bg-[#3A3A3C] rounded-xl border border-transparent hover:border-[#C9A84C]/30 transition-all text-left disabled:opacity-50"
                   >
                     <div className="flex-1">
@@ -832,7 +887,11 @@ function ProgramTab({
                       {p.tags && p.tags.length > 0 && (
                         <div className="flex gap-1 mt-1.5 flex-wrap">
                           {p.tags.map(tag => (
-                            <span key={tag} className="font-barlow text-[10px] bg-[#C9A84C]/10 text-[#C9A84C] px-2 py-0.5 rounded-full">{tag}</span>
+                            <span key={tag} className={`font-barlow text-[10px] px-2 py-0.5 rounded-full ${
+                              tag === activeTag
+                                ? 'bg-[#C9A84C]/25 text-[#C9A84C]'
+                                : 'bg-[#C9A84C]/10 text-[#C9A84C]'
+                            }`}>{tag}</span>
                           ))}
                         </div>
                       )}
@@ -847,6 +906,7 @@ function ProgramTab({
               )}
             </div>
 
+            {/* Footer */}
             <div className="p-4 border-t border-[#2C2C2E]">
               <button
                 onClick={() => {
