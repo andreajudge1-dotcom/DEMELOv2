@@ -63,8 +63,6 @@ export default function ProgramBuilder() {
   const { id: editProgramId } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const preselectedClientId = searchParams.get('clientId')
-  const fromTemplate = searchParams.get('from') === 'template'
-  const templateId = searchParams.get('templateId')
 
   const [clients, setClients] = useState<Client[]>([])
   const clientLocked = !!preselectedClientId
@@ -100,10 +98,8 @@ export default function ProgramBuilder() {
   useEffect(() => {
     if (editProgramId) {
       loadExistingProgram(editProgramId)
-    } else if (fromTemplate && templateId) {
-      loadTemplate(templateId)
     }
-  }, [editProgramId, templateId])
+  }, [editProgramId])
 
   async function fetchClients() {
     const { data } = await supabase
@@ -135,104 +131,6 @@ export default function ProgramBuilder() {
     setProgramId(pid)
     await loadDays(pid, cycle.num_days)
     setStep('builder')
-  }
-
-  async function loadTemplate(tid: string) {
-    setSaving(true)
-
-    // 1. Fetch the template cycle
-    const { data: cycle } = await supabase
-      .from('training_cycles')
-      .select('*')
-      .eq('id', tid)
-      .single()
-    if (!cycle) { setSaving(false); return }
-
-    // 2. Create a new cycle as a copy
-    const { data: newCycle } = await supabase
-      .from('training_cycles')
-      .insert({
-        trainer_id: profile?.id,
-        name: cycle.name + ' (copy)',
-        description: cycle.description ?? null,
-        cover_photo_url: cycle.cover_photo_url ?? null,
-        num_days: cycle.num_days,
-        num_weeks: cycle.num_weeks ?? 4,
-        is_template: false,
-        tags: cycle.tags ?? [],
-      })
-      .select()
-      .single()
-    if (!newCycle) { setSaving(false); return }
-
-    // 3. Fetch template workouts
-    const { data: workouts } = await supabase
-      .from('workouts')
-      .select('id, day_number, name, focus')
-      .eq('cycle_id', tid)
-      .order('day_number')
-
-    // 4. Deep copy each workout + exercises + sets
-    for (const w of workouts ?? []) {
-      const { data: newWorkout } = await supabase
-        .from('workouts')
-        .insert({ cycle_id: newCycle.id, day_number: w.day_number, name: w.name, focus: w.focus ?? null })
-        .select()
-        .single()
-      if (!newWorkout) continue
-
-      const { data: wes } = await supabase
-        .from('workout_exercises')
-        .select('id, exercise_id, position, superset_group, cue_override, notes')
-        .eq('workout_id', w.id)
-        .order('position')
-
-      for (const we of wes ?? []) {
-        const { data: newWE } = await supabase
-          .from('workout_exercises')
-          .insert({ workout_id: newWorkout.id, exercise_id: we.exercise_id, position: we.position, superset_group: (we as any).superset_group ?? null, cue_override: (we as any).cue_override ?? null, notes: we.notes ?? null })
-          .select()
-          .single()
-        if (!newWE) continue
-
-        const { data: sets } = await supabase
-          .from('workout_set_prescriptions')
-          .select('*')
-          .eq('workout_exercise_id', we.id)
-          .order('set_number')
-
-        if (sets?.length) {
-          await supabase.from('workout_set_prescriptions').insert(
-            sets.map(s => ({
-              workout_exercise_id: newWE.id,
-              set_number: s.set_number,
-              set_type: s.set_type,
-              reps: s.reps ?? null,
-              rpe_target: s.rpe_target ?? null,
-              load_modifier: s.load_modifier ?? null,
-              hold_seconds: s.hold_seconds ?? null,
-              tempo: s.tempo ?? null,
-              cue: s.cue ?? null,
-            }))
-          )
-        }
-      }
-    }
-
-    // 5. Update local form + load into builder
-    setForm({
-      name: newCycle.name,
-      description: newCycle.description ?? '',
-      numWeeks: newCycle.num_weeks ?? 4,
-      numDays: newCycle.num_days,
-      coverPhotoUrl: newCycle.cover_photo_url ?? COVER_OPTIONS[0],
-      assignToClientId: preselectedClientId ?? '',
-      tags: newCycle.tags ?? [],
-    })
-    setProgramId(newCycle.id)
-    await loadDays(newCycle.id, newCycle.num_days)
-    setStep('builder')
-    setSaving(false)
   }
 
   async function loadDays(pid: string, numDays: number) {

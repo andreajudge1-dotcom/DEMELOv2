@@ -188,69 +188,68 @@ export default function ClientProfile() {
     setMaxes(data ?? [])
   }, [])
 
-  useEffect(() => {
+  const loadAll = useCallback(async () => {
     if (!clientId) return
+    setLoading(true)
+    const cid = clientId!
 
-    async function loadAll() {
-      setLoading(true)
-      const cid = clientId!
+    const [clientRes, assignRes, historyRes, sessRes, checkRes, maxRes] = await Promise.all([
+      supabase.from('clients').select('*').eq('id', cid).single(),
+      supabase
+        .from('client_cycle_assignments')
+        .select('*, training_cycles(id, name, num_days, num_weeks, cover_photo_url)')
+        .eq('client_id', cid)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('client_cycle_assignments')
+        .select('id, cycle_id, status, started_at, created_at, training_cycles(name, num_days, num_weeks)')
+        .eq('client_id', cid)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('sessions')
+        .select('id, workout_id, cycle_id, started_at, completed_at, duration_min, notes, coach_notes, rating, workouts(name, day_number), training_cycles(name)')
+        .eq('client_id', cid)
+        .order('started_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('check_ins')
+        .select('*')
+        .eq('client_id', cid)
+        .order('week_start', { ascending: false }),
+      supabase
+        .from('training_maxes')
+        .select('*')
+        .eq('client_id', cid)
+        .order('exercise_name'),
+    ])
 
-      const [clientRes, assignRes, historyRes, sessRes, checkRes, maxRes] = await Promise.all([
-        supabase.from('clients').select('*').eq('id', cid).single(),
-        supabase
-          .from('client_cycle_assignments')
-          .select('*, training_cycles(id, name, num_days, num_weeks, cover_photo_url)')
-          .eq('client_id', cid)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('client_cycle_assignments')
-          .select('id, cycle_id, status, started_at, created_at, training_cycles(name, num_days, num_weeks)')
-          .eq('client_id', cid)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('sessions')
-          .select('id, workout_id, cycle_id, started_at, completed_at, duration_min, notes, coach_notes, rating, workouts(name, day_number), training_cycles(name)')
-          .eq('client_id', cid)
-          .order('started_at', { ascending: false })
-          .limit(50),
-        supabase
-          .from('check_ins')
-          .select('*')
-          .eq('client_id', cid)
-          .order('week_start', { ascending: false }),
-        supabase
-          .from('training_maxes')
-          .select('*')
-          .eq('client_id', cid)
-          .order('exercise_name'),
-      ])
-
-      if (clientRes.data) {
-        setClient(clientRes.data)
-        setStickyNote(clientRes.data.notes ?? '')
-      }
-      if (assignRes.data) {
-        setAssignment(assignRes.data as Assignment)
-        // Load workouts for active cycle
-        const { data: wd } = await supabase
-          .from('workouts')
-          .select('id, day_number, name, focus')
-          .eq('cycle_id', assignRes.data.cycle_id)
-          .order('day_number')
-        setWorkoutDays(wd ?? [])
-      }
-      setProgramHistory((historyRes.data ?? []) as unknown as ProgramHistory[])
-      setSessions((sessRes.data ?? []) as unknown as Session[])
-      setCheckIns(checkRes.data ?? [])
-      setMaxes(maxRes.data ?? [])
-      setLoading(false)
+    if (clientRes.data) {
+      setClient(clientRes.data)
+      setStickyNote(clientRes.data.notes ?? '')
     }
-
-    loadAll()
+    if (assignRes.data) {
+      setAssignment(assignRes.data as Assignment)
+      const { data: wd } = await supabase
+        .from('workouts')
+        .select('id, day_number, name, focus')
+        .eq('cycle_id', assignRes.data.cycle_id)
+        .order('day_number')
+      setWorkoutDays(wd ?? [])
+    } else {
+      setAssignment(null)
+      setWorkoutDays([])
+    }
+    setProgramHistory((historyRes.data ?? []) as unknown as ProgramHistory[])
+    setSessions((sessRes.data ?? []) as unknown as Session[])
+    setCheckIns(checkRes.data ?? [])
+    setMaxes(maxRes.data ?? [])
+    setLoading(false)
   }, [clientId])
+
+  useEffect(() => { loadAll() }, [loadAll])
 
   async function saveNote() {
     if (!clientId) return
@@ -433,10 +432,12 @@ export default function ClientProfile() {
           {activeTab === 'Program' && (
             <ProgramTab
               clientId={clientId!}
+              trainerId={profile?.id ?? ''}
               assignment={assignment}
               workoutDays={workoutDays}
               programHistory={programHistory}
               navigate={navigate}
+              onAssigned={loadAll}
             />
           )}
           {activeTab === 'Sessions' && (
@@ -640,30 +641,233 @@ function OverviewTab({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Library Program type (for assign modal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface LibraryProgram {
+  id: string
+  name: string
+  num_days: number
+  num_weeks: number
+  cover_photo_url: string | null
+  tags: string[] | null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Program Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ProgramTab({
   clientId,
+  trainerId,
   assignment,
   workoutDays,
   programHistory,
   navigate,
+  onAssigned,
 }: {
   clientId: string
+  trainerId: string
   assignment: Assignment | null
   workoutDays: WorkoutDay[]
   programHistory: ProgramHistory[]
   navigate: ReturnType<typeof useNavigate>
+  onAssigned: () => void
 }) {
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [libraryPrograms, setLibraryPrograms] = useState<LibraryProgram[]>([])
+  const [loadingLibrary, setLoadingLibrary] = useState(false)
+  const [assigning, setAssigning] = useState<string | null>(null)
+
+  async function openAssignModal() {
+    setShowAssignModal(true)
+    setLoadingLibrary(true)
+    const { data } = await supabase
+      .from('training_cycles')
+      .select('id, name, num_days, num_weeks, cover_photo_url, tags')
+      .eq('trainer_id', trainerId)
+      .order('name')
+    setLibraryPrograms(data ?? [])
+    setLoadingLibrary(false)
+  }
+
+  async function assignProgram(program: LibraryProgram) {
+    setAssigning(program.id)
+    try {
+      // 1. Deep copy the library program into a new cycle
+      const { data: newCycle } = await supabase
+        .from('training_cycles')
+        .insert({
+          trainer_id: trainerId,
+          name: program.name,
+          description: null,
+          cover_photo_url: program.cover_photo_url ?? null,
+          num_days: program.num_days,
+          num_weeks: program.num_weeks,
+          is_template: false,
+          tags: program.tags ?? [],
+        })
+        .select()
+        .single()
+      if (!newCycle) throw new Error('Failed to create cycle copy')
+
+      // 2. Copy workouts
+      const { data: workouts } = await supabase
+        .from('workouts')
+        .select('id, day_number, name, focus')
+        .eq('cycle_id', program.id)
+        .order('day_number')
+
+      for (const w of workouts ?? []) {
+        const { data: newWorkout } = await supabase
+          .from('workouts')
+          .insert({ cycle_id: newCycle.id, day_number: w.day_number, name: w.name, focus: w.focus ?? null })
+          .select()
+          .single()
+        if (!newWorkout) continue
+
+        const { data: wes } = await supabase
+          .from('workout_exercises')
+          .select('id, exercise_id, position, superset_group, cue_override, notes')
+          .eq('workout_id', w.id)
+          .order('position')
+
+        for (const we of wes ?? []) {
+          const { data: newWE } = await supabase
+            .from('workout_exercises')
+            .insert({
+              workout_id: newWorkout.id,
+              exercise_id: we.exercise_id,
+              position: we.position,
+              superset_group: (we as any).superset_group ?? null,
+              cue_override: (we as any).cue_override ?? null,
+              notes: we.notes ?? null,
+            })
+            .select()
+            .single()
+          if (!newWE) continue
+
+          const { data: sets } = await supabase
+            .from('workout_set_prescriptions')
+            .select('*')
+            .eq('workout_exercise_id', we.id)
+            .order('set_number')
+
+          if (sets?.length) {
+            await supabase.from('workout_set_prescriptions').insert(
+              sets.map(s => ({
+                workout_exercise_id: newWE.id,
+                set_number: s.set_number,
+                set_type: s.set_type,
+                reps: s.reps ?? null,
+                rpe_target: s.rpe_target ?? null,
+                load_modifier: s.load_modifier ?? null,
+                hold_seconds: s.hold_seconds ?? null,
+                tempo: s.tempo ?? null,
+                cue: s.cue ?? null,
+              }))
+            )
+          }
+        }
+      }
+
+      // 3. Deactivate existing assignment
+      await supabase
+        .from('client_cycle_assignments')
+        .update({ is_active: false, status: 'completed' })
+        .eq('client_id', clientId)
+        .eq('is_active', true)
+
+      // 4. Create new assignment
+      await supabase.from('client_cycle_assignments').insert({
+        client_id: clientId,
+        cycle_id: newCycle.id,
+        trainer_id: trainerId,
+        is_active: true,
+        status: 'active',
+        next_day_number: 1,
+      })
+
+      setShowAssignModal(false)
+      onAssigned()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setAssigning(null)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      {/* Assign from Library modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-[#2C2C2E]">
+              <h2 className="font-bebas text-xl text-white tracking-wide">Assign Program</h2>
+              <button
+                onClick={() => setShowAssignModal(false)}
+                className="text-white/40 hover:text-white transition-colors text-xl"
+              >×</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+              {loadingLibrary ? (
+                <p className="font-barlow text-sm text-white/40 text-center py-8">Loading library...</p>
+              ) : libraryPrograms.length === 0 ? (
+                <p className="font-barlow text-sm text-white/40 text-center py-8 italic">No programs in library yet.</p>
+              ) : (
+                libraryPrograms.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => assignProgram(p)}
+                    disabled={assigning === p.id}
+                    className="flex items-center gap-4 p-4 bg-[#2C2C2E] hover:bg-[#3A3A3C] rounded-xl border border-transparent hover:border-[#C9A84C]/30 transition-all text-left disabled:opacity-50"
+                  >
+                    <div className="flex-1">
+                      <p className="font-bebas text-base text-white tracking-wide">{p.name}</p>
+                      <p className="font-barlow text-xs text-white/40 mt-0.5">
+                        {p.num_days}d/week · {p.num_weeks} weeks
+                      </p>
+                      {p.tags && p.tags.length > 0 && (
+                        <div className="flex gap-1 mt-1.5 flex-wrap">
+                          {p.tags.map(tag => (
+                            <span key={tag} className="font-barlow text-[10px] bg-[#C9A84C]/10 text-[#C9A84C] px-2 py-0.5 rounded-full">{tag}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {assigning === p.id ? (
+                      <span className="font-barlow text-xs text-white/40">Assigning...</span>
+                    ) : (
+                      <span className="font-barlow text-xs text-[#C9A84C]">Assign →</span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t border-[#2C2C2E]">
+              <button
+                onClick={() => {
+                  setShowAssignModal(false)
+                  navigate(`/trainer/programs/new?clientId=${clientId}`)
+                }}
+                className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors"
+              >
+                + Build New Program
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Active program */}
       <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
         <div className="flex items-center justify-between mb-4">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Active Program</p>
           <button
-            onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
+            onClick={openAssignModal}
             className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors"
           >
             + Assign New
@@ -706,10 +910,10 @@ function ProgramTab({
           <div className="text-center py-6">
             <p className="font-barlow text-sm text-white/30 italic mb-3">No active program</p>
             <button
-              onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
+              onClick={openAssignModal}
               className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-5 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
             >
-              Build Program
+              Assign Program
             </button>
           </div>
         )}

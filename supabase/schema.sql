@@ -33,10 +33,11 @@ create policy "Users update own profile"
 --    Extended profile data for trainer accounts.
 -- ---------------------------------------------------------------------------
 create table if not exists trainers (
-  id          uuid primary key references profiles(id) on delete cascade,
-  bio         text,
-  specialties text[],
-  created_at  timestamptz default now()
+  id             uuid primary key references profiles(id) on delete cascade,
+  business_name  text,
+  bio            text,
+  specialties    text[],
+  created_at     timestamptz default now()
 );
 
 alter table trainers enable row level security;
@@ -63,7 +64,7 @@ create table if not exists clients (
   email       text,
   phone       text,
   avatar_url  text,
-  status      text not null default 'active' check (status in ('active', 'inactive', 'prospect')),
+  status      text not null default 'active' check (status in ('active', 'inactive', 'prospect', 'invited', 'paused')),
   notes       text,
   created_at  timestamptz default now()
 );
@@ -371,7 +372,7 @@ create table if not exists sessions (
   completed_at timestamptz,
   duration_min int,
   notes        text,
-  coach_notes  text,
+  coach_notes  text,                    -- trainer feedback on the session
   rating       int check (rating between 1 and 5),
   created_at   timestamptz default now()
 );

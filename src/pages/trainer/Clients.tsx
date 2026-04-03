@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import Select from '../../components/Select'
 
 interface Client {
   id: string
@@ -35,7 +34,7 @@ function daysSinceLabel(dateStr: string | null | undefined): string {
   return `${d}d ago`
 }
 
-const BLANK_FORM = { full_name: '', email: '', phone: '', status: 'active' }
+const BLANK_FORM = { full_name: '', email: '', phone: '' }
 
 // The URL clients land on when they click the invite email
 const ONBOARDING_URL = `${window.location.origin}/onboarding`
@@ -119,7 +118,7 @@ export default function Clients() {
       trainer_id: profile?.id,
       full_name: form.full_name.trim(),
       email: form.email.trim() || null,
-      status: form.status,
+      status: 'prospect',
     }
     if (form.phone.trim()) insertData.phone = form.phone.trim()
 
@@ -362,23 +361,17 @@ export default function Clients() {
                 <input
                   type="tel"
                   value={form.phone}
-                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                  placeholder="+1 (555) 000-0000"
+                  onChange={e => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+                    let formatted = digits
+                    if (digits.length > 6) formatted = `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`
+                    else if (digits.length > 3) formatted = `(${digits.slice(0,3)}) ${digits.slice(3)}`
+                    else if (digits.length > 0) formatted = `(${digits}`
+                    setForm(f => ({ ...f, phone: formatted }))
+                  }}
+                  placeholder="(555) 000-0000"
+                  maxLength={14}
                   className="bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-4 py-2.5 font-barlow text-sm text-white placeholder-white/30 outline-none focus:border-[#C9A84C]/50"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="font-barlow text-xs text-white/50 uppercase tracking-wider">Status</label>
-                <Select
-                  value={form.status}
-                  onChange={v => setForm(f => ({ ...f, status: v }))}
-                  options={[
-                    { value: 'active', label: 'Active' },
-                    { value: 'invited', label: 'Invited' },
-                    { value: 'paused', label: 'Paused' },
-                    { value: 'inactive', label: 'Inactive' },
-                  ]}
                 />
               </div>
 
