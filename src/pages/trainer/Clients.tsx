@@ -19,7 +19,6 @@ interface Client {
   program_name?: string
 }
 
-const ONBOARDING_URL = 'https://demel-ov2.vercel.app/onboarding'
 
 const GOAL_OPTIONS = [
   'Compete in powerlifting',
@@ -184,22 +183,7 @@ export default function Clients() {
       )
     }
 
-    // 3. Send invite email via OTP
-    const { error: otpErr } = await supabase.auth.signInWithOtp({
-      email: form.email.trim(),
-      options: {
-        emailRedirectTo: ONBOARDING_URL,
-        shouldCreateUser: true,
-      },
-    })
-
-    if (otpErr) {
-      setInviteError(otpErr.message)
-      setSaving(false)
-      return
-    }
-
-    // 4. Success
+    // 3. Success — no magic link, client registers themselves
     setSaving(false)
     setInviteSuccess(true)
     setTimeout(() => {
@@ -360,17 +344,39 @@ export default function Clients() {
             </div>
 
             {inviteSuccess ? (
-              /* Success state */
-              <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 gap-3">
-                <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center mb-2">
+              /* Success state — show copyable registration link */
+              <div className="flex-1 flex flex-col items-center px-6 py-8 gap-5">
+                <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center">
                   <svg className="w-7 h-7 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <p className="font-bebas text-2xl text-white tracking-wide">Invite Sent!</p>
-                <p className="font-barlow text-sm text-white/40 text-center">
-                  {form.full_name} will receive an email to set up their account.
+                <div className="text-center">
+                  <p className="font-bebas text-2xl text-white tracking-wide">{form.full_name} Added!</p>
+                  <p className="font-barlow text-sm text-white/40 mt-1">
+                    Share this link with them to set up their account.
+                  </p>
+                </div>
+                <div className="w-full bg-[#2C2C2E] border border-[#3A3A3C] rounded-xl px-4 py-3 flex items-center gap-3">
+                  <p className="font-barlow text-xs text-white/50 flex-1 truncate">
+                    {`${window.location.origin}/register`}
+                  </p>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/register`)}
+                    className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors flex-shrink-0"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="font-barlow text-xs text-white/25 text-center">
+                  Tell {form.full_name.split(' ')[0]} to select "I am a client" and use the email <span className="text-white/40">{form.email}</span>
                 </p>
+                <button
+                  onClick={closeModal}
+                  className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors"
+                >
+                  Done
+                </button>
               </div>
             ) : (
               <form onSubmit={handleInvite} className="flex-1 overflow-y-auto">
