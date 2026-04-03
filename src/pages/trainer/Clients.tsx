@@ -184,7 +184,20 @@ export default function Clients() {
       )
     }
 
-    // 3. Success — show link screen, trainer closes manually
+    // 3. Send invite email
+    const registerUrl = `${window.location.origin}/register`
+    await fetch('/api/send-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to_email: form.email.trim(),
+        to_name: form.full_name.trim(),
+        trainer_name: profile?.full_name ?? 'Your trainer',
+        register_url: registerUrl,
+      }),
+    })
+
+    // 4. Success — show link screen (also shows link in case email goes to spam)
     setSaving(false)
     setInviteSuccess(true)
     fetchClients()
