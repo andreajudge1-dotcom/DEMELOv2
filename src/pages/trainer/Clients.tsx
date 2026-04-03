@@ -186,16 +186,24 @@ export default function Clients() {
 
     // 3. Send invite email
     const registerUrl = `${window.location.origin}/register`
-    await fetch('/api/send-invite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to_email: form.email.trim(),
-        to_name: form.full_name.trim(),
-        trainer_name: profile?.full_name ?? 'Your trainer',
-        register_url: registerUrl,
-      }),
-    })
+    try {
+      const emailRes = await fetch('/api/send-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_email: form.email.trim(),
+          to_name: form.full_name.trim(),
+          trainer_name: profile?.full_name ?? 'Your trainer',
+          register_url: registerUrl,
+        }),
+      })
+      if (!emailRes.ok) {
+        const errData = await emailRes.json().catch(() => ({}))
+        console.error('Email API error:', emailRes.status, errData)
+      }
+    } catch (emailErr) {
+      console.error('Email fetch error:', emailErr)
+    }
 
     // 4. Success — show link screen (also shows link in case email goes to spam)
     setSaving(false)
