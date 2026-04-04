@@ -182,6 +182,10 @@ export default function ClientProfile() {
   const [showStartSession, setShowStartSession] = useState(false)
   const [sessionPackage, setSessionPackage] = useState<{ id: string; sessions_remaining: number } | null>(null)
   const [startingSession, setStartingSession] = useState(false)
+  const [sessionModalStep, setSessionModalStep] = useState<1 | 2>(1)
+  const [selectedDay, setSelectedDay] = useState<WorkoutDay | null>(null)
+  const [dayExerciseCounts, setDayExerciseCounts] = useState<Record<string, number>>({})
+  const [dayExerciseNames, setDayExerciseNames] = useState<Record<string, string[]>>({})
 
   const loadSessions = useCallback(async (cid: string) => {
     const { data } = await supabase
@@ -285,7 +289,16 @@ export default function ClientProfile() {
   }
 
   async function openStartSessionModal() {
+    setSessionModalStep(1)
     setShowStartSession(true)
+
+    // Default to suggested day
+    const suggestedDay = assignment
+      ? workoutDays.find(w => w.day_number === assignment.next_day_number) ?? workoutDays[0] ?? null
+      : workoutDays[0] ?? null
+    setSelectedDay(suggestedDay)
+
+    // Load package info
     const { data } = await supabase
       .from('session_packages')
       .select('id, sessions_remaining')
@@ -295,29 +308,41 @@ export default function ClientProfile() {
       .limit(1)
       .maybeSingle()
     setSessionPackage(data ?? null)
+
+    // Load exercise counts + names per workout day
+    if (workoutDays.length > 0) {
+      const ids = workoutDays.map(d => d.id)
+      const { data: weData } = await supabase
+        .from('workout_exercises')
+        .select('workout_id, exercises(name)')
+        .in('workout_id', ids)
+        .order('position')
+      if (weData) {
+        const counts: Record<string, number> = {}
+        const names: Record<string, string[]> = {}
+        weData.forEach((row: any) => {
+          counts[row.workout_id] = (counts[row.workout_id] ?? 0) + 1
+          if (!names[row.workout_id]) names[row.workout_id] = []
+          if (row.exercises?.name) names[row.workout_id].push(row.exercises.name)
+        })
+        setDayExerciseCounts(counts)
+        setDayExerciseNames(names)
+      }
+    }
   }
 
   async function confirmStartSession() {
-    if (!clientId || !profile?.id) return
+    if (!clientId || !profile?.id || !selectedDay) return
     setStartingSession(true)
 
-    const todayWorkout = assignment
-      ? workoutDays.find(w => w.day_number === assignment.next_day_number)
-      : null
-
-    const basePayload = {
-      client_id: clientId,
-      trainer_id: profile.id,
-      workout_id: todayWorkout?.id ?? null,
-      cycle_id: assignment?.cycle_id ?? null,
-      started_at: new Date().toISOString(),
-    }
-
-    // Try with new columns first, fall back to base if migration not applied
-    let result = await supabase
+    const { data: newSession, error } = await supabase
       .from('sessions')
       .insert({
-        ...basePayload,
+        client_id: clientId,
+        trainer_id: profile.id,
+        workout_id: selectedDay.id,
+        cycle_id: assignment?.cycle_id ?? null,
+        started_at: new Date().toISOString(),
         session_context: 'in_person',
         initiated_by: 'trainer',
         counts_against_package: !!sessionPackage,
@@ -325,16 +350,6 @@ export default function ClientProfile() {
       })
       .select('id')
       .single()
-
-    if (result.error) {
-      result = await supabase
-        .from('sessions')
-        .insert(basePayload)
-        .select('id')
-        .single()
-    }
-
-    const { data: newSession, error } = result
 
     if (error) {
       console.error('Start session error:', error.message, error.details, error.hint, JSON.stringify(error))
@@ -514,60 +529,157 @@ export default function ClientProfile() {
         </div>
       )}
 
-      {/* ── Start Session Confirmation Modal ── */}
+      {/* ── Start Session 2-Step Modal ── */}
       {showStartSession && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-6">
-            {/* Avatar + name */}
-            <div className="flex items-center gap-4 mb-5">
-              <div className="w-14 h-14 rounded-full bg-[#C9A84C]/20 flex items-center justify-center">
-                <span className="font-bebas text-xl text-[#C9A84C]">{initials(client.full_name)}</span>
-              </div>
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md flex flex-col max-h-[85vh]">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#2C2C2E]">
               <div>
-                <h2 className="font-bebas text-2xl text-white tracking-wide">{client.full_name}</h2>
-                {assignment && (
-                  <p className="font-barlow text-xs text-white/40 mt-0.5">
-                    Day {assignment.next_day_number} — {workoutDays.find(w => w.day_number === assignment.next_day_number)?.name ?? 'Training'}
-                  </p>
-                )}
+                <h2 className="font-bebas text-xl text-white tracking-wide">
+                  {sessionModalStep === 1 ? 'Which day are you doing today?' : 'Confirm Session'}
+                </h2>
+                <p className="font-barlow text-xs text-white/40 mt-0.5">{client.full_name}</p>
               </div>
+              <button
+                onClick={() => setShowStartSession(false)}
+                className="text-white/40 hover:text-white transition-colors text-xl"
+              >×</button>
             </div>
 
-            <p className="font-barlow text-sm text-white/70 mb-3">
-              Start an in-person session with {client.full_name.split(' ')[0]}?
-            </p>
+            {sessionModalStep === 1 ? (
+              <>
+                {/* Step 1 — Day Selection */}
+                <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+                  {workoutDays.length === 0 ? (
+                    <p className="font-barlow text-sm text-white/30 text-center py-8 italic">No workout days in this program.</p>
+                  ) : (
+                    workoutDays.map(day => {
+                      const isSuggested = assignment ? day.day_number === assignment.next_day_number : false
+                      const isDone = sessions.some(s => s.workout_id === day.id && s.completed_at)
+                      const isSelected = selectedDay?.id === day.id
+                      const count = dayExerciseCounts[day.id] ?? 0
+                      const statusLabel = isDone ? 'Done' : isSuggested ? 'Suggested' : 'Available'
+                      const statusColor = isDone ? 'text-green-400 bg-green-500/15' : isSuggested ? 'text-[#C9A84C] bg-[#C9A84C]/15' : 'text-white/40 bg-white/5'
 
-            {/* Package info */}
-            {sessionPackage ? (
-              <div className="bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-lg px-4 py-3 mb-5">
-                <p className="font-barlow text-sm text-[#C9A84C]">
-                  This will use <span className="font-semibold">1</span> of their <span className="font-semibold">{sessionPackage.sessions_remaining}</span> remaining sessions.
-                </p>
-              </div>
+                      return (
+                        <button
+                          key={day.id}
+                          onClick={() => setSelectedDay(day)}
+                          className={`flex items-center gap-3 p-3.5 rounded-xl text-left transition-all border ${
+                            isSelected
+                              ? 'border-[#C9A84C] bg-[#C9A84C]/5'
+                              : isSuggested
+                                ? 'border-[#C9A84C]/30 bg-[#1C1C1E] hover:bg-[#2C2C2E]'
+                                : 'border-[#2C2C2E] bg-[#1C1C1E] hover:bg-[#2C2C2E]'
+                          }`}
+                        >
+                          {/* Day number */}
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            isSelected ? 'bg-[#C9A84C] text-black' : 'bg-[#2C2C2E] text-white/50'
+                          }`}>
+                            <span className="font-bebas text-lg">{day.day_number}</span>
+                          </div>
+
+                          {/* Day info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-barlow text-sm font-semibold text-white truncate">{day.name}</p>
+                            <p className="font-barlow text-xs text-white/30 mt-0.5">
+                              {count} exercise{count !== 1 ? 's' : ''}
+                              {day.focus && day.focus !== 'rest_day' ? ` · ${day.focus}` : ''}
+                            </p>
+                          </div>
+
+                          {/* Status badge */}
+                          <span className={`font-barlow text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full flex-shrink-0 ${statusColor}`}>
+                            {statusLabel}
+                          </span>
+
+                          {/* Selection indicator */}
+                          {isSelected && (
+                            <svg className="w-5 h-5 text-[#C9A84C] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+
+                {/* Step 1 footer */}
+                <div className="p-4 border-t border-[#2C2C2E]">
+                  <button
+                    onClick={() => { if (selectedDay) setSessionModalStep(2) }}
+                    disabled={!selectedDay}
+                    className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-30"
+                  >
+                    Next
+                  </button>
+                </div>
+              </>
             ) : (
-              <div className="bg-white/5 border border-[#2C2C2E] rounded-lg px-4 py-3 mb-5">
-                <p className="font-barlow text-sm text-white/40">
-                  This client is not on a session package.
-                </p>
-              </div>
-            )}
+              <>
+                {/* Step 2 — Confirmation */}
+                <div className="flex-1 overflow-y-auto p-5">
+                  {/* Selected day */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-[#C9A84C] text-black flex items-center justify-center flex-shrink-0">
+                      <span className="font-bebas text-lg">{selectedDay?.day_number}</span>
+                    </div>
+                    <div>
+                      <p className="font-bebas text-xl text-white tracking-wide">{selectedDay?.name}</p>
+                      <p className="font-barlow text-xs text-white/40">{dayExerciseCounts[selectedDay?.id ?? ''] ?? 0} exercises</p>
+                    </div>
+                  </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setShowStartSession(false); setStartingSession(false) }}
-                disabled={startingSession}
-                className="flex-1 font-barlow text-sm text-white/40 border border-[#2C2C2E] rounded-xl py-2.5 hover:text-white hover:border-[#3A3A3C] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmStartSession}
-                disabled={startingSession}
-                className="flex-1 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
-              >
-                {startingSession ? 'Starting...' : 'Start Session'}
-              </button>
-            </div>
+                  {/* Exercise preview */}
+                  {selectedDay && (dayExerciseNames[selectedDay.id] ?? []).length > 0 && (
+                    <div className="bg-[#0A0A0A] rounded-lg border border-[#2C2C2E] p-3 mb-4">
+                      {(dayExerciseNames[selectedDay.id] ?? []).slice(0, 3).map((name, i) => (
+                        <div key={i} className="flex items-center gap-2 py-1.5">
+                          <span className="font-barlow text-xs text-[#C9A84C] w-5 text-center">{i + 1}</span>
+                          <span className="font-barlow text-sm text-white/70">{name}</span>
+                        </div>
+                      ))}
+                      {(dayExerciseNames[selectedDay.id] ?? []).length > 3 && (
+                        <p className="font-barlow text-xs text-white/25 pl-7 pt-1">
+                          + {(dayExerciseNames[selectedDay.id] ?? []).length - 3} more
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Package info — only show if package exists */}
+                  {sessionPackage && (
+                    <div className="bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-lg px-4 py-3">
+                      <p className="font-barlow text-sm text-[#C9A84C]">
+                        This will use <span className="font-semibold">1</span> of their <span className="font-semibold">{sessionPackage.sessions_remaining}</span> remaining sessions.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Step 2 footer */}
+                <div className="p-4 border-t border-[#2C2C2E] flex gap-3">
+                  <button
+                    onClick={() => setSessionModalStep(1)}
+                    disabled={startingSession}
+                    className="flex-1 font-barlow text-sm text-white/40 border border-[#2C2C2E] rounded-xl py-2.5 hover:text-white hover:border-[#3A3A3C] transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={confirmStartSession}
+                    disabled={startingSession}
+                    className="flex-1 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+                  >
+                    {startingSession ? 'Starting...' : 'Start Session'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
