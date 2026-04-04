@@ -51,7 +51,7 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="/client" element={<ClientLayout />}>
-        <Route index element={<Navigate to="today" replace />} />
+        <Route index element={<Navigate to="home" replace />} />
         <Route path="home" element={<ClientHome />} />
         <Route path="today" element={<Today />} />
         <Route path="progress" element={<Progress />} />

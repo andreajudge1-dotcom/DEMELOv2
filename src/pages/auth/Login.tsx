@@ -39,7 +39,7 @@ export default function Login() {
     if (profile?.role === 'trainer') {
       navigate('/trainer/dashboard')
     } else {
-      navigate('/client/today')
+      navigate('/client/home')
     }
 
     setLoading(false)
