@@ -135,7 +135,7 @@ export default function ClientHome() {
       .maybeSingle()
 
     if (!assignRow) { setLoading(false); return }
-    setProgram(assignRow as ProgramData)
+    setProgram(assignRow as unknown as ProgramData)
 
     const numDays = (assignRow.training_cycles as any).num_days ?? 4
     const week = Math.ceil(assignRow.next_day_number / numDays)
@@ -159,7 +159,7 @@ export default function ClientHome() {
         .select('id, exercises(name), workout_set_prescriptions(rpe_target)')
         .eq('workout_id', todayWorkout.id)
         .order('position')
-      setTodayExercises((exRows ?? []) as WorkoutExercise[])
+      setTodayExercises((exRows ?? []) as unknown as WorkoutExercise[])
     }
 
     // 6. Sessions completed this week
