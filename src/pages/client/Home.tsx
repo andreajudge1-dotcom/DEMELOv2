@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { useCheckIn } from '../../contexts/CheckInContext'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -90,6 +91,7 @@ const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export default function ClientHome() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const { hasCheckedInThisWeek } = useCheckIn()
 
   const [loading, setLoading] = useState(true)
   const [client, setClient] = useState<ClientData | null>(null)
@@ -294,6 +296,29 @@ export default function ClientHome() {
               Dismiss
             </button>
           </div>
+        )}
+
+        {/* ── SECTION 2b: CHECK-IN BANNER ── */}
+        {hasCheckedInThisWeek === false && (
+          <button
+            onClick={() => navigate('/client/checkin')}
+            className="w-full mb-4 flex items-center gap-3 bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-2xl px-4 py-4 text-left min-h-[56px]"
+          >
+            <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 flex items-center justify-center flex-shrink-0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-barlow text-sm font-semibold text-[#C9A84C] leading-tight">
+                Your weekly check-in is due.
+              </p>
+              <p className="font-barlow text-xs text-[#C9A84C]/60 mt-0.5">Tap to complete</p>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="flex-shrink-0">
+              <path d="M9 18l6-6-6-6" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         )}
 
         {/* ── SECTION 3: TODAY CARD ── */}

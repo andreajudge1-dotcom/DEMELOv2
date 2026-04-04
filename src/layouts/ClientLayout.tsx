@@ -1,5 +1,8 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { CheckInProvider, useCheckIn } from '../contexts/CheckInContext'
+
+// ── Nav items ─────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
   {
@@ -49,10 +52,13 @@ const NAV_ITEMS = [
   },
 ]
 
-export default function ClientLayout() {
+// ── Inner layout (uses CheckIn context) ───────────────────────────────────────
+
+function ClientLayoutInner() {
   const location = useLocation()
   const navigate = useNavigate()
   const { profile, signOut } = useAuth()
+  const { hasCheckedInThisWeek } = useCheckIn()
 
   async function handleSignOut() {
     await signOut()
@@ -62,17 +68,22 @@ export default function ClientLayout() {
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Client'
   const avatarInitial = profile?.full_name?.charAt(0)?.toUpperCase() ?? 'C'
 
+  // Check-in tab status indicator
+  // null = loading (show nothing), false = due (gold dot), true = done (green check)
+  const checkInDue = hasCheckedInThisWeek === false
+  const checkInDone = hasCheckedInThisWeek === true
+
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
       <main className="pb-[112px]">
         <Outlet />
       </main>
 
-      {/* Bottom nav — matches trainer sidebar bottom section */}
+      {/* Bottom nav — mirrors trainer sidebar bottom section */}
       <nav className="fixed bottom-0 left-0 right-0 bg-[#1C1C1E] border-t border-[#2C2C2E] z-50">
         <div className="max-w-[390px] mx-auto">
 
-          {/* User strip — mirrors trainer sidebar footer */}
+          {/* User strip */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-[#2C2C2E]">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
@@ -95,13 +106,28 @@ export default function ClientLayout() {
           <div className="flex items-center justify-around px-2 py-2">
             {NAV_ITEMS.map(item => {
               const active = location.pathname === item.path
+              const isCheckIn = item.path === '/client/checkin'
+
               return (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className="flex flex-col items-center gap-1 px-3 py-1.5 min-w-[52px] justify-center"
+                  className="relative flex flex-col items-center gap-1 px-3 py-1.5 min-w-[52px] justify-center"
                 >
+                  {/* Check-in status badge */}
+                  {isCheckIn && checkInDue && (
+                    <span className="absolute -top-0.5 right-3 w-2 h-2 rounded-full bg-[#C9A84C]" />
+                  )}
+                  {isCheckIn && checkInDone && (
+                    <span className="absolute -top-0.5 right-3 w-4 h-4 rounded-full bg-green-500/20 flex items-center justify-center">
+                      <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                        <path d="M1 3L3 5L7 1" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  )}
+
                   {item.icon(active)}
+
                   <span
                     className="font-barlow text-[10px] tracking-wide"
                     style={{ color: active ? '#C9A84C' : 'rgba(255,255,255,0.3)' }}
@@ -119,5 +145,15 @@ export default function ClientLayout() {
         </div>
       </nav>
     </div>
+  )
+}
+
+// ── Exported layout — wraps inner with provider ───────────────────────────────
+
+export default function ClientLayout() {
+  return (
+    <CheckInProvider>
+      <ClientLayoutInner />
+    </CheckInProvider>
   )
 }
