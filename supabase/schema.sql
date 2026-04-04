@@ -525,10 +525,25 @@ create table if not exists check_ins (
   energy_level   int check (energy_level between 1 and 10),
   stress_level   int check (stress_level between 1 and 10),
   soreness_level int check (soreness_level between 1 and 10),
-  motivation      int check (motivation between 1 and 10),
-  notes           text,
-  coach_response  text,
-  created_at      timestamptz default now()
+  motivation           int check (motivation between 1 and 10),
+  -- renamed columns for clarity
+  sleep_score          int,
+  nutrition_score      int,
+  fatigue_score        int,
+  soreness_score       int,
+  performance_score    int,
+  body_weight          numeric,
+  waist_inches         numeric,
+  hips_inches          numeric,
+  chest_inches         numeric,
+  arms_inches          numeric,
+  notes                text,
+  coach_response       text,
+  photo_front_url      text,
+  photo_side_left_url  text,
+  photo_side_right_url text,
+  photo_back_url       text,
+  created_at           timestamptz default now()
 );
 
 alter table check_ins enable row level security;
