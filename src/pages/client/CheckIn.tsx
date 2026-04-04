@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -158,7 +158,7 @@ function SilhouetteBack() {
   )
 }
 
-const SILHOUETTES: Record<PhotoAngle, JSX.Element> = {
+const SILHOUETTES: Record<PhotoAngle, React.ReactElement> = {
   front: <SilhouetteFront />,
   side_left: <SilhouetteSideLeft />,
   side_right: <SilhouetteSideRight />,
