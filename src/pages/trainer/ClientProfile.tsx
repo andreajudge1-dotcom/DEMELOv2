@@ -851,8 +851,7 @@ function OverviewTab({
             <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">This Week</p>
             <div className="flex flex-col gap-2">
               {workoutDays.map(day => {
-                const isDone = day.day_number < (assignment.next_day_number % assignment.training_cycles.num_days || assignment.training_cycles.num_days)
-                  && currentWeek === Math.ceil(assignment.next_day_number / assignment.training_cycles.num_days)
+                const isDone = sessions.some(s => s.workout_id === day.id && s.completed_at)
                 return (
                   <div key={day.id} className="flex items-center gap-2">
                     <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${isDone ? 'bg-green-500/20 text-green-400' : 'bg-[#2C2C2E] text-white/20'}`}>
