@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../contexts/AuthContext'
 import ExercisePicker from '../../components/ExercisePicker'
 import SessionSummary from '../../components/SessionSummary'
 
@@ -88,8 +87,6 @@ function formatTimer(seconds: number): string {
 export default function ClientSession() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const { profile } = useAuth()
-
   const [session, setSession] = useState<SessionData | null>(null)
   const [dayName, setDayName] = useState('')
   const [exercises, setExercises] = useState<ExerciseCard[]>([])
