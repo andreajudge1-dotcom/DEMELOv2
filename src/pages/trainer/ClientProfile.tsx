@@ -28,7 +28,6 @@ interface CycleInfo {
 interface Assignment {
   id: string
   cycle_id: string
-  status: string
   is_active: boolean
   next_day_number: number
   started_at: string | null
@@ -106,7 +105,7 @@ interface TrainingMax {
 interface ProgramHistory {
   id: string
   cycle_id: string
-  status: string
+  is_active: boolean
   started_at: string | null
   created_at: string
   training_cycles: { name: string; num_days: number; num_weeks: number }
@@ -180,11 +179,14 @@ export default function ClientProfile() {
   const [savingNote, setSavingNote] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showStartSession, setShowStartSession] = useState(false)
+  const [sessionPackage, setSessionPackage] = useState<{ id: string; sessions_remaining: number } | null>(null)
+  const [startingSession, setStartingSession] = useState(false)
 
   const loadSessions = useCallback(async (cid: string) => {
     const { data } = await supabase
       .from('sessions')
-      .select('id, workout_id, cycle_id, started_at, completed_at, duration_min, notes, coach_notes, rating, workouts(name, day_number), training_cycles(name)')
+      .select('id, workout_id, started_at, completed_at, coach_notes, workouts(name, day_number)')
       .eq('client_id', cid)
       .order('started_at', { ascending: false })
       .limit(50)
@@ -217,12 +219,12 @@ export default function ClientProfile() {
         .maybeSingle(),
       supabase
         .from('client_cycle_assignments')
-        .select('id, cycle_id, status, started_at, created_at, training_cycles(name, num_days, num_weeks)')
+        .select('id, cycle_id, is_active, started_at, created_at, training_cycles(name, num_days, num_weeks)')
         .eq('client_id', cid)
         .order('created_at', { ascending: false }),
       supabase
         .from('sessions')
-        .select('id, workout_id, cycle_id, started_at, completed_at, duration_min, notes, coach_notes, rating, workouts(name, day_number), training_cycles(name)')
+        .select('id, workout_id, started_at, completed_at, coach_notes, workouts(name, day_number)')
         .eq('client_id', cid)
         .order('started_at', { ascending: false })
         .limit(50),
@@ -278,9 +280,78 @@ export default function ClientProfile() {
   }
 
   function handleSendInvite() {
-    // Copy the registration link to clipboard
     navigator.clipboard.writeText(`${window.location.origin}/register`)
     setInviteSent(true)
+  }
+
+  async function openStartSessionModal() {
+    setShowStartSession(true)
+    const { data } = await supabase
+      .from('session_packages')
+      .select('id, sessions_remaining')
+      .eq('client_id', clientId!)
+      .gt('sessions_remaining', 0)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    setSessionPackage(data ?? null)
+  }
+
+  async function confirmStartSession() {
+    if (!clientId || !profile?.id) return
+    setStartingSession(true)
+
+    const todayWorkout = assignment
+      ? workoutDays.find(w => w.day_number === assignment.next_day_number)
+      : null
+
+    const basePayload = {
+      client_id: clientId,
+      trainer_id: profile.id,
+      workout_id: todayWorkout?.id ?? null,
+      cycle_id: assignment?.cycle_id ?? null,
+      started_at: new Date().toISOString(),
+    }
+
+    // Try with new columns first, fall back to base if migration not applied
+    let result = await supabase
+      .from('sessions')
+      .insert({
+        ...basePayload,
+        session_context: 'in_person',
+        initiated_by: 'trainer',
+        counts_against_package: !!sessionPackage,
+        status: 'in_progress',
+      })
+      .select('id')
+      .single()
+
+    if (result.error) {
+      result = await supabase
+        .from('sessions')
+        .insert(basePayload)
+        .select('id')
+        .single()
+    }
+
+    const { data: newSession, error } = result
+
+    if (error) {
+      console.error('Start session error:', error.message, error.details, error.hint, JSON.stringify(error))
+      setStartingSession(false)
+      return
+    }
+
+    if (sessionPackage) {
+      await supabase
+        .from('session_packages')
+        .update({ sessions_remaining: sessionPackage.sessions_remaining - 1 })
+        .eq('id', sessionPackage.id)
+    }
+
+    setShowStartSession(false)
+    setStartingSession(false)
+    navigate(`/trainer/session/${newSession.id}`)
   }
 
   // ── Computed ──
@@ -389,8 +460,14 @@ export default function ClientProfile() {
               Message
             </button>
             <button
-              onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
+              onClick={openStartSessionModal}
               className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-4 py-2 rounded-lg hover:bg-[#E2C070] transition-colors"
+            >
+              Start Session
+            </button>
+            <button
+              onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
+              className="font-barlow text-sm text-white/60 border border-[#2C2C2E] rounded-lg px-3 py-2 hover:border-[#3A3A3C] hover:text-white transition-colors"
             >
               Build Program
             </button>
@@ -431,6 +508,64 @@ export default function ClientProfile() {
                 className="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-bebas text-sm tracking-widest py-2.5 rounded-xl transition-colors disabled:opacity-50"
               >
                 {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Start Session Confirmation Modal ── */}
+      {showStartSession && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-6">
+            {/* Avatar + name */}
+            <div className="flex items-center gap-4 mb-5">
+              <div className="w-14 h-14 rounded-full bg-[#C9A84C]/20 flex items-center justify-center">
+                <span className="font-bebas text-xl text-[#C9A84C]">{initials(client.full_name)}</span>
+              </div>
+              <div>
+                <h2 className="font-bebas text-2xl text-white tracking-wide">{client.full_name}</h2>
+                {assignment && (
+                  <p className="font-barlow text-xs text-white/40 mt-0.5">
+                    Day {assignment.next_day_number} — {workoutDays.find(w => w.day_number === assignment.next_day_number)?.name ?? 'Training'}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <p className="font-barlow text-sm text-white/70 mb-3">
+              Start an in-person session with {client.full_name.split(' ')[0]}?
+            </p>
+
+            {/* Package info */}
+            {sessionPackage ? (
+              <div className="bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-lg px-4 py-3 mb-5">
+                <p className="font-barlow text-sm text-[#C9A84C]">
+                  This will use <span className="font-semibold">1</span> of their <span className="font-semibold">{sessionPackage.sessions_remaining}</span> remaining sessions.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white/5 border border-[#2C2C2E] rounded-lg px-4 py-3 mb-5">
+                <p className="font-barlow text-sm text-white/40">
+                  This client is not on a session package.
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowStartSession(false); setStartingSession(false) }}
+                disabled={startingSession}
+                className="flex-1 font-barlow text-sm text-white/40 border border-[#2C2C2E] rounded-xl py-2.5 hover:text-white hover:border-[#3A3A3C] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmStartSession}
+                disabled={startingSession}
+                className="flex-1 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+              >
+                {startingSession ? 'Starting...' : 'Start Session'}
               </button>
             </div>
           </div>
@@ -719,6 +854,23 @@ function ProgramTab({
   const [assignError, setAssignError] = useState('')
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>({})
+
+  // Load exercise counts per workout day when assignment exists
+  useEffect(() => {
+    if (!workoutDays.length) return
+    (async () => {
+      const ids = workoutDays.map(d => d.id)
+      const { data } = await supabase
+        .from('workout_exercises')
+        .select('workout_id')
+        .in('workout_id', ids)
+      if (!data) return
+      const counts: Record<string, number> = {}
+      data.forEach(row => { counts[row.workout_id] = (counts[row.workout_id] ?? 0) + 1 })
+      setExerciseCounts(counts)
+    })()
+  }, [workoutDays])
 
   // All unique tags across the library
   const allTags = Array.from(new Set(libraryPrograms.flatMap(p => p.tags ?? []))).sort()
@@ -831,19 +983,20 @@ function ProgramTab({
       // 3. Deactivate existing assignment
       await supabase
         .from('client_cycle_assignments')
-        .update({ is_active: false, status: 'completed' })
+        .update({ is_active: false })
         .eq('client_id', clientId)
         .eq('is_active', true)
 
       // 4. Create new assignment
-      await supabase.from('client_cycle_assignments').insert({
+      const { error: assignErr } = await supabase.from('client_cycle_assignments').insert({
         client_id: clientId,
         cycle_id: newCycle.id,
         trainer_id: trainerId,
         is_active: true,
-        status: 'active',
         next_day_number: 1,
+        started_at: new Date().toISOString(),
       })
+      if (assignErr) throw new Error(assignErr.message)
 
       setShowAssignModal(false)
       onAssigned()
@@ -855,176 +1008,289 @@ function ProgramTab({
     }
   }
 
-  return (
-    <div className="flex flex-col gap-4">
-      {/* Assign from Library modal */}
-      {showAssignModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md max-h-[85vh] flex flex-col">
+  // Derived values for active program display
+  const currentWeek = assignment
+    ? Math.ceil(assignment.next_day_number / assignment.training_cycles.num_days)
+    : null
 
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#2C2C2E]">
-              <h2 className="font-bebas text-xl text-white tracking-wide">Assign Program</h2>
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="text-white/40 hover:text-white transition-colors text-xl"
-              >×</button>
-            </div>
+  // ── Assign-from-Library modal (shared by empty + active states) ──
+  const assignModal = showAssignModal && (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-lg max-h-[85vh] flex flex-col">
 
-            {/* Error */}
-            {assignError && (
-              <p className="mx-4 mt-3 font-barlow text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                {assignError}
-              </p>
-            )}
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#2C2C2E]">
+          <h2 className="font-bebas text-xl text-white tracking-wide">Assign Program from Library</h2>
+          <button
+            onClick={() => setShowAssignModal(false)}
+            className="text-white/40 hover:text-white transition-colors text-xl"
+          >×</button>
+        </div>
 
-            {/* Search + tag filters */}
-            {!loadingLibrary && libraryPrograms.length > 0 && (
-              <div className="px-4 pt-3 pb-2 flex flex-col gap-2 border-b border-[#2C2C2E]">
-                {/* Search input */}
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search by name or tag..."
-                  autoFocus
-                  className="w-full bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-3 py-2 font-barlow text-sm text-white placeholder-white/30 outline-none focus:border-[#C9A84C]/50"
-                />
-                {/* Tag pills */}
-                {allTags.length > 0 && (
-                  <div className="flex gap-1.5 flex-wrap">
-                    {allTags.map(tag => (
-                      <button
-                        key={tag}
-                        onClick={() => setActiveTag(activeTag === tag ? null : tag)}
-                        className={`font-barlow text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                          activeTag === tag
-                            ? 'bg-[#C9A84C] text-black border-[#C9A84C]'
-                            : 'bg-transparent text-white/50 border-[#3A3A3C] hover:border-[#C9A84C]/50 hover:text-white/80'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                )}
+        {/* Error */}
+        {assignError && (
+          <p className="mx-4 mt-3 font-barlow text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {assignError}
+          </p>
+        )}
+
+        {/* Search + tag filters */}
+        {!loadingLibrary && libraryPrograms.length > 0 && (
+          <div className="px-4 pt-3 pb-2 flex flex-col gap-2 border-b border-[#2C2C2E]">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or tag..."
+              autoFocus
+              className="w-full bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-3 py-2 font-barlow text-sm text-white placeholder-white/30 outline-none focus:border-[#C9A84C]/50"
+            />
+            {allTags.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap">
+                {allTags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                    className={`font-barlow text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      activeTag === tag
+                        ? 'bg-[#C9A84C] text-black border-[#C9A84C]'
+                        : 'bg-transparent text-white/50 border-[#3A3A3C] hover:border-[#C9A84C]/50 hover:text-white/80'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
               </div>
             )}
-
-            {/* Program list */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-              {loadingLibrary ? (
-                <p className="font-barlow text-sm text-white/40 text-center py-8">Loading library...</p>
-              ) : libraryPrograms.length === 0 ? (
-                <p className="font-barlow text-sm text-white/40 text-center py-8 italic">No programs in library yet.</p>
-              ) : filteredPrograms.length === 0 ? (
-                <p className="font-barlow text-sm text-white/40 text-center py-8 italic">No programs match your search.</p>
-              ) : (
-                filteredPrograms.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => assignProgram(p)}
-                    disabled={!!assigning}
-                    className="flex items-center gap-4 p-4 bg-[#2C2C2E] hover:bg-[#3A3A3C] rounded-xl border border-transparent hover:border-[#C9A84C]/30 transition-all text-left disabled:opacity-50"
-                  >
-                    <div className="flex-1">
-                      <p className="font-bebas text-base text-white tracking-wide">{p.name}</p>
-                      <p className="font-barlow text-xs text-white/40 mt-0.5">
-                        {p.num_days}d/week · {p.num_weeks} weeks
-                      </p>
-                      {p.tags && p.tags.length > 0 && (
-                        <div className="flex gap-1 mt-1.5 flex-wrap">
-                          {p.tags.map(tag => (
-                            <span key={tag} className={`font-barlow text-[10px] px-2 py-0.5 rounded-full ${
-                              tag === activeTag
-                                ? 'bg-[#C9A84C]/25 text-[#C9A84C]'
-                                : 'bg-[#C9A84C]/10 text-[#C9A84C]'
-                            }`}>{tag}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {assigning === p.id ? (
-                      <span className="font-barlow text-xs text-white/40">Assigning...</span>
-                    ) : (
-                      <span className="font-barlow text-xs text-[#C9A84C]">Assign →</span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-[#2C2C2E]">
-              <button
-                onClick={() => {
-                  setShowAssignModal(false)
-                  navigate(`/trainer/programs/new?clientId=${clientId}`)
-                }}
-                className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors"
-              >
-                + Build New Program
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Active program */}
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
-        <div className="flex items-center justify-between mb-4">
-          <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Active Program</p>
-          <button
-            onClick={openAssignModal}
-            className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors"
-          >
-            + Assign New
-          </button>
-        </div>
-
-        {assignment ? (
-          <>
-            <div className="flex items-center gap-3 mb-4">
-              <p className="font-bebas text-xl text-white tracking-wide">{assignment.training_cycles.name}</p>
-              <span className="font-barlow text-xs text-white/40">
-                {assignment.training_cycles.num_days}d/week · {assignment.training_cycles.num_weeks} weeks
-              </span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {workoutDays.map(day => (
-                <div key={day.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${
-                  day.focus === 'rest_day' ? 'bg-transparent' : 'bg-[#2C2C2E]'
-                }`}>
-                  <span className={`font-bebas text-sm w-6 flex-shrink-0 ${day.focus === 'rest_day' ? 'text-white/25' : 'text-[#C9A84C]'}`}>
-                    {day.day_number}
-                  </span>
-                  <span className={`font-barlow text-sm flex-1 ${day.focus === 'rest_day' ? 'text-white/25' : 'text-white/80'}`}>
-                    {day.focus === 'rest_day' ? 'Rest Day' : day.name}
-                  </span>
-                  {day.focus && day.focus !== 'rest_day' && (
-                    <span className="font-barlow text-xs text-white/35">{day.focus}</span>
+        {/* Program list */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+          {loadingLibrary ? (
+            <p className="font-barlow text-sm text-white/40 text-center py-8">Loading library...</p>
+          ) : libraryPrograms.length === 0 ? (
+            <p className="font-barlow text-sm text-white/40 text-center py-8 italic">No programs in library yet.</p>
+          ) : filteredPrograms.length === 0 ? (
+            <p className="font-barlow text-sm text-white/40 text-center py-8 italic">No programs match your search.</p>
+          ) : (
+            filteredPrograms.map(p => (
+              <button
+                key={p.id}
+                onClick={() => assignProgram(p)}
+                disabled={!!assigning}
+                className="flex items-center gap-4 p-4 bg-[#2C2C2E] hover:bg-[#3A3A3C] rounded-xl border border-transparent hover:border-[#C9A84C]/30 transition-all text-left disabled:opacity-50"
+              >
+                {/* Thumbnail */}
+                {p.cover_photo_url ? (
+                  <img src={p.cover_photo_url} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-[#3A3A3C] flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h7" /></svg>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bebas text-base text-white tracking-wide truncate">{p.name}</p>
+                  <p className="font-barlow text-xs text-white/40 mt-0.5">
+                    {p.num_days}d/week · {p.num_weeks} weeks
+                  </p>
+                  {p.tags && p.tags.length > 0 && (
+                    <div className="flex gap-1 mt-1.5 flex-wrap">
+                      {p.tags.map(tag => (
+                        <span key={tag} className={`font-barlow text-[10px] px-2 py-0.5 rounded-full ${
+                          tag === activeTag
+                            ? 'bg-[#C9A84C]/25 text-[#C9A84C]'
+                            : 'bg-[#C9A84C]/10 text-[#C9A84C]'
+                        }`}>{tag}</span>
+                      ))}
+                    </div>
                   )}
                 </div>
-              ))}
+                {assigning === p.id ? (
+                  <span className="font-barlow text-xs text-white/40 flex-shrink-0">Assigning...</span>
+                ) : (
+                  <span className="font-barlow text-xs text-[#C9A84C] flex-shrink-0">Assign →</span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-[#2C2C2E]">
+          <button
+            onClick={() => {
+              setShowAssignModal(false)
+              navigate(`/trainer/programs/new?clientId=${clientId}`)
+            }}
+            className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors"
+          >
+            + Build New Program Instead
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── No active program → two action cards ──
+  if (!assignment) {
+    return (
+      <div className="flex flex-col gap-4">
+        {assignModal}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Card 1 — Assign from Library */}
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-6 flex flex-col items-center text-center">
+            {/* Icon */}
+            <div className="w-14 h-14 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center mb-4">
+              <svg className="w-7 h-7 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
             </div>
-            <button
-              onClick={() => navigate(`/trainer/programs/${assignment.cycle_id}`)}
-              className="mt-4 w-full font-barlow text-sm text-white/40 border border-[#2C2C2E] rounded-lg py-2 hover:text-white hover:border-[#3A3A3C] transition-colors"
-            >
-              Edit Program
-            </button>
-          </>
-        ) : (
-          <div className="text-center py-6">
-            <p className="font-barlow text-sm text-white/30 italic mb-3">No active program</p>
+            <h3 className="font-bebas text-xl text-white tracking-wide mb-1">Assign from Library</h3>
+            <p className="font-barlow text-sm text-white/40 mb-5 leading-relaxed">
+              Pick a program you've already built and assign it to this client.
+            </p>
             <button
               onClick={openAssignModal}
-              className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-5 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
+              className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-6 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
             >
               Assign Program
             </button>
           </div>
+
+          {/* Card 2 — Build New Program */}
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-6 flex flex-col items-center text-center">
+            {/* Icon */}
+            <div className="w-14 h-14 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center mb-4">
+              <svg className="w-7 h-7 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.42 15.17l-5.1-5.1m0 0L11.42 4.97m-5.1 5.1h13.32M4.93 19.07h14.14" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v1m6 11h-1.25M12 20v-1m-6-11h1.25M17.657 6.343l-.707.707M6.343 17.657l.707-.707M17.657 17.657l-.707-.707M6.343 6.343l.707.707" />
+              </svg>
+            </div>
+            <h3 className="font-bebas text-xl text-white tracking-wide mb-1">Build New Program</h3>
+            <p className="font-barlow text-sm text-white/40 mb-5 leading-relaxed">
+              Create a program specifically for this client from scratch.
+            </p>
+            <button
+              onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
+              className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-6 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
+            >
+              Build Program
+            </button>
+          </div>
+        </div>
+
+        {/* Program history */}
+        {programHistory.length > 0 && (
+          <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+            <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Program History</p>
+            <div className="flex flex-col divide-y divide-[#2C2C2E]">
+              {programHistory.map(h => (
+                <div key={h.id} className="py-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-barlow text-sm text-white/70 truncate">{h.training_cycles.name}</p>
+                    <p className="font-barlow text-xs text-white/30 mt-0.5">
+                      {h.training_cycles.num_days}d/week · {h.training_cycles.num_weeks} weeks
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-barlow text-xs text-white/40">{fmtDate(h.started_at ?? h.created_at)}</p>
+                    <span className={`font-barlow text-xs px-2 py-0.5 rounded-full ${
+                      h.is_active ? 'bg-green-500/20 text-green-400'
+                      : 'bg-white/10 text-white/40'
+                    }`}>
+                      {h.is_active ? 'active' : 'completed'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
+      </div>
+    )
+  }
+
+  // ── Active program view ──
+  return (
+    <div className="flex flex-col gap-4">
+      {assignModal}
+
+      {/* Program details card */}
+      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Active Program</p>
+          <span className="font-barlow text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400">Active</span>
+        </div>
+        <p className="font-bebas text-2xl text-white tracking-wide">{assignment.training_cycles.name}</p>
+
+        {/* Stats row */}
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2 mb-4">
+          {currentWeek !== null && (
+            <p className="font-barlow text-sm text-white/50">
+              Week <span className="text-white/80 font-medium">{currentWeek}</span> of {assignment.training_cycles.num_weeks}
+            </p>
+          )}
+          <p className="font-barlow text-sm text-white/50">
+            <span className="text-white/80 font-medium">{assignment.training_cycles.num_days}</span> days/week
+          </p>
+          <p className="font-barlow text-sm text-white/50">
+            Started {fmtDate(assignment.started_at ?? assignment.created_at)}
+          </p>
+        </div>
+
+        {/* Progress bar */}
+        {(() => {
+          const total = assignment.training_cycles.num_weeks * assignment.training_cycles.num_days
+          const pct = Math.min(100, Math.round(((assignment.next_day_number - 1) / total) * 100))
+          return (
+            <div className="h-1.5 bg-[#2C2C2E] rounded-full overflow-hidden mb-5">
+              <div className="h-full bg-[#C9A84C] rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          )
+        })()}
+
+        {/* Workout days list */}
+        <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Workout Days</p>
+        <div className="flex flex-col gap-1.5">
+          {workoutDays.map(day => {
+            const count = exerciseCounts[day.id] ?? 0
+            return (
+              <div key={day.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${
+                day.focus === 'rest_day' ? 'bg-transparent' : 'bg-[#2C2C2E]'
+              }`}>
+                <span className={`font-bebas text-sm w-6 flex-shrink-0 ${day.focus === 'rest_day' ? 'text-white/25' : 'text-[#C9A84C]'}`}>
+                  {day.day_number}
+                </span>
+                <span className={`font-barlow text-sm flex-1 ${day.focus === 'rest_day' ? 'text-white/25' : 'text-white/80'}`}>
+                  {day.focus === 'rest_day' ? 'Rest Day' : day.name}
+                </span>
+                {day.focus !== 'rest_day' && count > 0 && (
+                  <span className="font-barlow text-xs text-white/30">{count} exercise{count !== 1 ? 's' : ''}</span>
+                )}
+                {day.focus && day.focus !== 'rest_day' && (
+                  <span className="font-barlow text-xs text-white/35">{day.focus}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={openAssignModal}
+            className="flex-1 font-barlow text-sm text-white/50 border border-[#2C2C2E] rounded-lg py-2.5 hover:text-white hover:border-[#3A3A3C] transition-colors"
+          >
+            Assign Different Program
+          </button>
+          <button
+            onClick={() => navigate(`/trainer/programs/${assignment.cycle_id}`)}
+            className="flex-1 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
+          >
+            View Full Program
+          </button>
+        </div>
       </div>
 
       {/* Program history */}
@@ -1043,11 +1309,10 @@ function ProgramTab({
                 <div className="text-right flex-shrink-0">
                   <p className="font-barlow text-xs text-white/40">{fmtDate(h.started_at ?? h.created_at)}</p>
                   <span className={`font-barlow text-xs px-2 py-0.5 rounded-full ${
-                    h.status === 'active' ? 'bg-green-500/20 text-green-400'
-                    : h.status === 'completed' ? 'bg-white/10 text-white/40'
-                    : 'bg-yellow-500/20 text-yellow-400'
+                    h.is_active ? 'bg-green-500/20 text-green-400'
+                    : 'bg-white/10 text-white/40'
                   }`}>
-                    {h.status}
+                    {h.is_active ? 'active' : 'completed'}
                   </span>
                 </div>
               </div>

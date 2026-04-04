@@ -193,7 +193,7 @@ create table if not exists client_cycle_assignments (
   id              uuid primary key default gen_random_uuid(),
   client_id       uuid not null references clients(id) on delete cascade,
   cycle_id        uuid not null references training_cycles(id) on delete cascade,
-  trainer_id      uuid not null references profiles(id) on delete cascade,
+  trainer_id      uuid references trainers(id),
   status          text not null default 'active' check (status in ('active', 'completed', 'paused')),
   is_active       boolean default true,
   next_day_number int default 1,
@@ -386,6 +386,13 @@ create table if not exists sessions (
   notes        text,
   coach_notes  text,                    -- trainer feedback on the session
   rating       int check (rating between 1 and 5),
+  exercise_swaps jsonb default '[]',
+  session_context text default 'in_person' check (session_context in ('in_person','remote','unscheduled')),
+  initiated_by    text default 'client' check (initiated_by in ('trainer','client')),
+  counts_against_package boolean default false,
+  status          text default 'in_progress' check (status in ('in_progress','completed')),
+  total_tonnage   numeric,
+  average_rpe     numeric,
   created_at   timestamptz default now()
 );
 
@@ -417,6 +424,8 @@ create table if not exists session_exercises (
   exercise_id         uuid not null references exercises(id) on delete cascade,
   workout_exercise_id uuid references workout_exercises(id) on delete set null,
   order_index         int not null default 0,
+  skipped             boolean default false,
+  skip_note           text,
   notes               text,
   created_at          timestamptz default now()
 );
@@ -511,6 +520,36 @@ create policy "Client logs own sets"
     )
   );
 
+
+-- ---------------------------------------------------------------------------
+-- 13b. SESSION PACKAGES
+--      Tracks how many paid in-person sessions a client has remaining.
+-- ---------------------------------------------------------------------------
+create table if not exists session_packages (
+  id                 uuid primary key default gen_random_uuid(),
+  client_id          uuid not null references clients(id) on delete cascade,
+  trainer_id         uuid not null references profiles(id) on delete cascade,
+  total_sessions     int not null,
+  sessions_remaining int not null,
+  created_at         timestamptz default now()
+);
+
+alter table session_packages enable row level security;
+
+create policy "Trainer manages session packages"
+  on session_packages
+  using (trainer_id = auth.uid())
+  with check (trainer_id = auth.uid());
+
+create policy "Client reads own session packages"
+  on session_packages for select
+  using (
+    exists (
+      select 1 from clients c
+      where c.id = session_packages.client_id
+        and c.profile_id = auth.uid()
+    )
+  );
 
 -- ---------------------------------------------------------------------------
 -- 14. CHECK-INS
@@ -741,6 +780,8 @@ create table if not exists messages (
   sender_role  text not null check (sender_role in ('trainer', 'client')),
   body         text not null,
   read_at      timestamptz,
+  is_broadcast boolean      default false,
+  broadcast_id uuid         default null,
   created_at   timestamptz default now()
 );
 
@@ -864,6 +905,53 @@ create policy "Client reads own maxes"
   using (
     exists (select 1 from clients c where c.id = training_maxes.client_id and c.profile_id = auth.uid())
   );
+
+
+-- ---------------------------------------------------------------------------
+-- 25. PERSONAL RECORDS
+-- ---------------------------------------------------------------------------
+create table if not exists personal_records (
+  id             uuid primary key default gen_random_uuid(),
+  client_id      uuid not null references clients(id) on delete cascade,
+  exercise_name  text not null,
+  pr_type        text not null check (pr_type in ('weight', 'reps')),
+  value          numeric not null,
+  logged_at      timestamptz default now(),
+  created_at     timestamptz default now()
+);
+
+alter table personal_records enable row level security;
+
+create policy "Client manages own PRs"
+  on personal_records
+  using (exists (select 1 from clients c where c.id = personal_records.client_id and c.profile_id = auth.uid()))
+  with check (exists (select 1 from clients c where c.id = personal_records.client_id and c.profile_id = auth.uid()));
+
+create policy "Trainer reads client PRs"
+  on personal_records for select
+  using (exists (select 1 from clients c where c.id = personal_records.client_id and c.trainer_id = auth.uid()));
+
+
+-- ---------------------------------------------------------------------------
+-- 26. BODY WEIGHT LOGS
+-- ---------------------------------------------------------------------------
+create table if not exists body_weight_logs (
+  id         uuid primary key default gen_random_uuid(),
+  client_id  uuid not null references clients(id) on delete cascade,
+  weight_lbs numeric not null,
+  logged_at  timestamptz default now()
+);
+
+alter table body_weight_logs enable row level security;
+
+create policy "Client manages own weight logs"
+  on body_weight_logs
+  using (exists (select 1 from clients c where c.id = body_weight_logs.client_id and c.profile_id = auth.uid()))
+  with check (exists (select 1 from clients c where c.id = body_weight_logs.client_id and c.profile_id = auth.uid()));
+
+create policy "Trainer reads client weight logs"
+  on body_weight_logs for select
+  using (exists (select 1 from clients c where c.id = body_weight_logs.client_id and c.trainer_id = auth.uid()));
 
 
 -- ---------------------------------------------------------------------------

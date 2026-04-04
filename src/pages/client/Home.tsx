@@ -102,6 +102,14 @@ export default function ClientHome() {
   const [completedSessions, setCompletedSessions] = useState<Session[]>([])
   const [notification, setNotification] = useState<Notification | null>(null)
   const [currentWeek, setCurrentWeek] = useState(1)
+  const [startingSession, setStartingSession] = useState(false)
+  const [showDayPicker, setShowDayPicker] = useState(false)
+  const [showExtraSheet, setShowExtraSheet] = useState(false)
+  const [extraType, setExtraType] = useState<string | null>(null)
+  const [extraDuration, setExtraDuration] = useState('')
+  const [extraRpe, setExtraRpe] = useState('')
+  const [extraNotes, setExtraNotes] = useState('')
+  const [savingExtra, setSavingExtra] = useState(false)
 
   useEffect(() => {
     if (profile?.id) loadAll(profile.id)
@@ -196,6 +204,63 @@ export default function ClientHome() {
       .update({ read_at: new Date().toISOString() })
       .eq('id', notification.id)
     setNotification(null)
+  }
+
+  async function startSession(workoutOverride?: Workout) {
+    if (!client || !program || startingSession) return
+    setStartingSession(true)
+    const w = workoutOverride ?? workouts.find(wo => wo.day_number === (program?.next_day_number ?? 1)) ?? null
+    const { data, error } = await supabase
+      .from('sessions')
+      .insert({
+        client_id: client.id,
+        trainer_id: client.trainer_id,
+        workout_id: w?.id ?? null,
+        cycle_id: program.cycle_id,
+        started_at: new Date().toISOString(),
+        session_context: 'remote',
+        initiated_by: 'client',
+        counts_against_package: false,
+        status: 'in_progress',
+      })
+      .select('id')
+      .single()
+    setStartingSession(false)
+    if (data) navigate(`/client/session/${data.id}`)
+    if (error) console.error('Start session error:', error)
+  }
+
+  async function saveExtraWorkout() {
+    if (!client || !extraType) return
+    setSavingExtra(true)
+    const now = new Date()
+    const dur = parseInt(extraDuration) || null
+    const { data, error } = await supabase
+      .from('sessions')
+      .insert({
+        client_id: client.id,
+        trainer_id: client.trainer_id,
+        started_at: now.toISOString(),
+        completed_at: now.toISOString(),
+        duration_min: dur,
+        session_context: 'unscheduled',
+        initiated_by: 'client',
+        counts_against_package: false,
+        status: extraType === 'Strength' ? 'in_progress' : 'completed',
+        notes: [extraType, extraNotes].filter(Boolean).join(' — '),
+        average_rpe: extraRpe ? parseFloat(extraRpe) : null,
+      })
+      .select('id')
+      .single()
+    setSavingExtra(false)
+    if (!data) { if (error) console.error(error); return }
+    if (extraType === 'Strength') {
+      navigate(`/client/session/${data.id}`)
+    } else {
+      setShowExtraSheet(false)
+      setExtraType(null)
+      loadAll(profile!.id)
+    }
   }
 
   // ── Derived ──
@@ -328,8 +393,19 @@ export default function ClientHome() {
           workout={todayWorkout ?? null}
           exercises={todayExercises}
           completed={todayCompleted}
-          onStart={() => navigate('/client/today')}
+          onStart={() => startSession()}
+          starting={startingSession}
         />
+
+        {/* Do a different day */}
+        {!todayCompleted && todayWorkout && (
+          <button
+            onClick={() => setShowDayPicker(true)}
+            className="w-full mb-4 font-barlow text-xs text-white/30 hover:text-[#C9A84C] transition-colors"
+          >
+            Do a different day
+          </button>
+        )}
 
         {/* ── SECTION 4: THIS WEEK STRIP ── */}
         <WeekStrip
@@ -340,11 +416,116 @@ export default function ClientHome() {
         />
 
         {/* ── SECTION 5: EXTRA WORKOUT ── */}
-        <button className="w-full mt-3 border border-[#2C2C2E] rounded-2xl py-4 font-barlow text-sm text-white/30 hover:text-white/60 hover:border-[#3A3A3C] transition-colors min-h-[56px]">
+        <button
+          onClick={() => { setShowExtraSheet(true); setExtraType(null) }}
+          className="w-full mt-3 border border-[#2C2C2E] rounded-2xl py-4 font-barlow text-sm text-white/30 hover:text-white/60 hover:border-[#3A3A3C] transition-colors min-h-[56px]"
+        >
           + Log extra workout
         </button>
 
       </div>
+
+      {/* ── Day picker bottom sheet ── */}
+      {showDayPicker && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center">
+          <div className="bg-[#1C1C1E] rounded-t-2xl border-t border-[#2C2C2E] w-full max-w-[500px] max-h-[60vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#2C2C2E]">
+              <h2 className="font-bebas text-lg text-white tracking-wide">Choose a Day</h2>
+              <button onClick={() => setShowDayPicker(false)} className="text-white/40 hover:text-white text-lg">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+              {workouts.map(w => {
+                const isDone = completedSessions.some(s => s.workout_id === w.id)
+                const isCurrent = w.day_number === nextDayNumber
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => { setShowDayPicker(false); startSession(w) }}
+                    className={`flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${
+                      isDone ? 'bg-green-500/5 border border-green-500/20' : 'bg-[#2C2C2E] hover:bg-[#3A3A3C] border border-transparent'
+                    }`}
+                  >
+                    <span className={`font-bebas text-lg w-8 text-center flex-shrink-0 ${isCurrent ? 'text-[#C9A84C]' : 'text-white/40'}`}>{w.day_number}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-barlow text-sm text-white truncate">{w.name}</p>
+                      {w.focus && <p className="font-barlow text-xs text-white/30 capitalize">{w.focus}</p>}
+                    </div>
+                    {isDone && (
+                      <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Extra workout bottom sheet ── */}
+      {showExtraSheet && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center">
+          <div className="bg-[#1C1C1E] rounded-t-2xl border-t border-[#2C2C2E] w-full max-w-[500px] flex flex-col">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#2C2C2E]">
+              <h2 className="font-bebas text-lg text-white tracking-wide">Log Extra Workout</h2>
+              <button onClick={() => { setShowExtraSheet(false); setExtraType(null) }} className="text-white/40 hover:text-white text-lg">×</button>
+            </div>
+            <div className="p-4">
+              {/* Type selector */}
+              {!extraType ? (
+                <div className="flex flex-wrap gap-2">
+                  {['Strength', 'Cardio', 'Mobility', 'Sport', 'Other'].map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setExtraType(t)}
+                      className="px-4 py-2.5 bg-[#2C2C2E] hover:bg-[#3A3A3C] rounded-xl font-barlow text-sm text-white transition-colors"
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              ) : extraType === 'Strength' ? (
+                <div>
+                  <p className="font-barlow text-sm text-white/50 mb-3">This will open a free-form session where you can search and add exercises.</p>
+                  <button
+                    onClick={saveExtraWorkout}
+                    disabled={savingExtra}
+                    className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+                  >
+                    {savingExtra ? 'Starting...' : 'Start Strength Session'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <p className="font-barlow text-xs text-[#C9A84C] uppercase tracking-wider">{extraType}</p>
+                  <div>
+                    <label className="font-barlow text-xs text-white/30 block mb-1">Duration (minutes)</label>
+                    <input type="number" value={extraDuration} onChange={e => setExtraDuration(e.target.value)} placeholder="e.g. 45" className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50" />
+                  </div>
+                  {extraType === 'Cardio' && (
+                    <div>
+                      <label className="font-barlow text-xs text-white/30 block mb-1">RPE</label>
+                      <input type="number" step="0.5" min="1" max="10" value={extraRpe} onChange={e => setExtraRpe(e.target.value)} placeholder="e.g. 6" className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50" />
+                    </div>
+                  )}
+                  <div>
+                    <label className="font-barlow text-xs text-white/30 block mb-1">Notes</label>
+                    <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="What did you do?" rows={2} className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-sm text-white placeholder-white/20 resize-none outline-none focus:border-[#C9A84C]/50" />
+                  </div>
+                  <button
+                    onClick={saveExtraWorkout}
+                    disabled={savingExtra}
+                    className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+                  >
+                    {savingExtra ? 'Saving...' : 'Save Workout'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -360,6 +541,7 @@ function TodayCard({
   exercises,
   completed,
   onStart,
+  starting,
 }: {
   dayNumber: number
   numDays: number
@@ -367,6 +549,7 @@ function TodayCard({
   exercises: WorkoutExercise[]
   completed: boolean
   onStart: () => void
+  starting?: boolean
 }) {
   const isRestDay = !workout
 
@@ -433,9 +616,10 @@ function TodayCard({
 
           <button
             onClick={onStart}
-            className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-colors min-h-[56px]"
+            disabled={starting}
+            className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-colors min-h-[56px] disabled:opacity-50"
           >
-            START SESSION
+            {starting ? 'STARTING...' : 'START SESSION'}
           </button>
         </>
       )}
