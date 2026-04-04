@@ -1,4 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 
 const NAV_ITEMS = [
   {
@@ -51,9 +52,26 @@ const NAV_ITEMS = [
 export default function ClientLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { signOut } = useAuth()
+
+  async function handleSignOut() {
+    await signOut()
+    navigate('/login')
+  }
 
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
+      {/* Logout button — fixed top right */}
+      <button
+        onClick={handleSignOut}
+        className="fixed top-4 right-4 z-50 flex items-center gap-1.5 bg-[#1C1C1E]/90 backdrop-blur border border-[#2C2C2E] rounded-full px-3 py-1.5"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+          <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="font-barlow text-[11px] text-white/30 tracking-wide">Log out</span>
+      </button>
+
       <main className="pb-24">
         <Outlet />
       </main>
