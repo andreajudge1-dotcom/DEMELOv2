@@ -78,12 +78,22 @@ interface SessionSet {
 interface CheckIn {
   id: string
   week_start: string
-  sleep_quality: number | null
-  energy_level: number | null
-  stress_level: number | null
-  soreness_level: number | null
-  motivation: number | null
+  sleep_score: number | null
+  nutrition_score: number | null
+  fatigue_score: number | null
+  soreness_score: number | null
+  performance_score: number | null
+  body_weight: number | null
+  waist_inches: number | null
+  hips_inches: number | null
+  chest_inches: number | null
+  arms_inches: number | null
   notes: string | null
+  coach_response: string | null
+  photo_front_url: string | null
+  photo_side_left_url: string | null
+  photo_side_right_url: string | null
+  photo_back_url: string | null
 }
 
 interface TrainingMax {
@@ -131,16 +141,18 @@ function fmtDate(dateStr: string | null | undefined): string {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function scoreBar(value: number | null) {
+function scoreBar(value: number | null, max = 10) {
   if (value === null) return null
-  const pct = (value / 10) * 100
-  const color = value >= 7 ? '#4ade80' : value >= 4 ? '#facc15' : '#f87171'
+  const pct = (value / max) * 100
+  const color = max === 5
+    ? (value >= 4 ? '#4ade80' : value === 3 ? '#facc15' : '#f87171')
+    : (value >= 7 ? '#4ade80' : value >= 4 ? '#facc15' : '#f87171')
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-[#2C2C2E] rounded-full overflow-hidden">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
-      <span className="font-barlow text-xs text-white/60 w-4 text-right">{value}</span>
+      <span className="font-barlow text-xs text-white/60 w-6 text-right">{value}/{max}</span>
     </div>
   )
 }
@@ -619,10 +631,11 @@ function OverviewTab({
             </div>
             <div className="flex flex-col gap-2">
               {[
-                { label: 'Sleep', val: latestCheckIn.sleep_quality },
-                { label: 'Energy', val: latestCheckIn.energy_level },
-                { label: 'Soreness', val: latestCheckIn.soreness_level },
-                { label: 'Motivation', val: latestCheckIn.motivation },
+                { label: 'Sleep', val: latestCheckIn.sleep_score },
+                { label: 'Nutrition', val: latestCheckIn.nutrition_score },
+                { label: 'Fatigue', val: latestCheckIn.fatigue_score },
+                { label: 'Soreness', val: latestCheckIn.soreness_score },
+                { label: 'Performance', val: latestCheckIn.performance_score },
               ].map(({ label, val }) => (
                 <div key={label}>
                   <p className="font-barlow text-xs text-white/40 mb-1">{label}</p>
@@ -1236,6 +1249,16 @@ function ProgressTab({ sessions }: { sessions: Session[] }) {
 
 function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState<Record<string, string>>({})
+  const [savingReply, setSavingReply] = useState<string | null>(null)
+
+  async function saveReply(ciId: string) {
+    const text = replyText[ciId]?.trim()
+    if (!text) return
+    setSavingReply(ciId)
+    await supabase.from('check_ins').update({ coach_response: text }).eq('id', ciId)
+    setSavingReply(null)
+  }
 
   if (checkIns.length === 0) {
     return (
@@ -1249,9 +1272,16 @@ function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
   return (
     <div className="flex flex-col gap-2">
       {checkIns.map(ci => {
-        const scores = [ci.sleep_quality, ci.energy_level, ci.soreness_level, ci.motivation].filter((v): v is number => v !== null)
+        const scores = [ci.sleep_score, ci.nutrition_score, ci.fatigue_score, ci.soreness_score, ci.performance_score].filter((v): v is number => v !== null)
         const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0
         const isOpen = expanded === ci.id
+        const photos = [
+          { label: 'Front', url: ci.photo_front_url },
+          { label: 'Side L', url: ci.photo_side_left_url },
+          { label: 'Side R', url: ci.photo_side_right_url },
+          { label: 'Back', url: ci.photo_back_url },
+        ].filter(p => p.url)
+
         return (
           <div key={ci.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden">
             <button
@@ -1260,21 +1290,25 @@ function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
             >
               <div className="flex-1">
                 <p className="font-barlow font-semibold text-sm text-white">Week of {fmtDate(ci.week_start)}</p>
-                <p className="font-barlow text-xs text-white/40 mt-0.5">Avg score: {avg.toFixed(1)}/10</p>
+                <p className="font-barlow text-xs text-white/40 mt-0.5">
+                  Avg: {avg.toFixed(1)}/5
+                  {ci.body_weight ? ` · ${ci.body_weight} lbs` : ''}
+                  {photos.length > 0 ? ` · ${photos.length} photo${photos.length > 1 ? 's' : ''}` : ''}
+                </p>
               </div>
-              {/* Mini score pills */}
-              <div className="flex gap-1.5">
+              <div className="flex gap-1">
                 {[
-                  { label: 'Slp', val: ci.sleep_quality },
-                  { label: 'Nrg', val: ci.energy_level },
-                  { label: 'Srs', val: ci.soreness_level },
-                  { label: 'Mot', val: ci.motivation },
+                  { label: 'Slp', val: ci.sleep_score },
+                  { label: 'Nut', val: ci.nutrition_score },
+                  { label: 'Fat', val: ci.fatigue_score },
+                  { label: 'Srs', val: ci.soreness_score },
+                  { label: 'Prf', val: ci.performance_score },
                 ].map(({ label, val }) => (
                   <div key={label} className="text-center">
                     <div className={`w-7 h-7 rounded-md flex items-center justify-center font-bebas text-sm ${
                       val === null ? 'bg-[#2C2C2E] text-white/25'
-                      : val >= 7 ? 'bg-green-500/20 text-green-400'
-                      : val >= 4 ? 'bg-yellow-500/20 text-yellow-400'
+                      : val >= 4 ? 'bg-green-500/20 text-green-400'
+                      : val === 3 ? 'bg-yellow-500/20 text-yellow-400'
                       : 'bg-red-500/20 text-red-400'
                     }`}>
                       {val ?? '—'}
@@ -1287,27 +1321,85 @@ function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
             </button>
 
             {isOpen && (
-              <div className="border-t border-[#2C2C2E] px-5 py-4 bg-[#171717]">
+              <div className="border-t border-[#2C2C2E] px-5 py-4 bg-[#171717] flex flex-col gap-4">
+
+                {/* Scores */}
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                   {[
-                    { label: 'Sleep Quality', val: ci.sleep_quality },
-                    { label: 'Energy Level', val: ci.energy_level },
-                    { label: 'Stress Level', val: ci.stress_level },
-                    { label: 'Soreness', val: ci.soreness_level },
-                    { label: 'Motivation', val: ci.motivation },
+                    { label: 'Sleep Quality', val: ci.sleep_score },
+                    { label: 'Nutrition', val: ci.nutrition_score },
+                    { label: 'Fatigue', val: ci.fatigue_score },
+                    { label: 'Soreness', val: ci.soreness_score },
+                    { label: 'Performance', val: ci.performance_score },
                   ].map(({ label, val }) => (
                     <div key={label}>
                       <p className="font-barlow text-xs text-white/40 mb-1">{label}</p>
-                      {scoreBar(val)}
+                      {scoreBar(val, 5)}
                     </div>
                   ))}
                 </div>
+
+                {/* Body metrics */}
+                {(ci.body_weight || ci.waist_inches || ci.hips_inches || ci.chest_inches || ci.arms_inches) && (
+                  <div className="pt-3 border-t border-[#2C2C2E]">
+                    <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Body Metrics</p>
+                    <div className="flex flex-wrap gap-3">
+                      {ci.body_weight && <span className="font-barlow text-sm text-white/70">Weight: <strong className="text-white">{ci.body_weight} lbs</strong></span>}
+                      {ci.waist_inches && <span className="font-barlow text-sm text-white/70">Waist: <strong className="text-white">{ci.waist_inches}"</strong></span>}
+                      {ci.hips_inches && <span className="font-barlow text-sm text-white/70">Hips: <strong className="text-white">{ci.hips_inches}"</strong></span>}
+                      {ci.chest_inches && <span className="font-barlow text-sm text-white/70">Chest: <strong className="text-white">{ci.chest_inches}"</strong></span>}
+                      {ci.arms_inches && <span className="font-barlow text-sm text-white/70">Arms: <strong className="text-white">{ci.arms_inches}"</strong></span>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Photos */}
+                {photos.length > 0 && (
+                  <div className="pt-3 border-t border-[#2C2C2E]">
+                    <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Progress Photos</p>
+                    <div className="flex gap-2">
+                      {photos.map(p => (
+                        <div key={p.label} className="flex flex-col items-center gap-1">
+                          <img src={p.url!} alt={p.label} className="w-16 h-20 object-cover rounded-lg" />
+                          <span className="font-barlow text-[10px] text-white/30">{p.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Client notes */}
                 {ci.notes && (
-                  <div className="mt-4 pt-3 border-t border-[#2C2C2E]">
-                    <p className="font-barlow text-xs text-white/40 mb-1">Client Notes</p>
+                  <div className="pt-3 border-t border-[#2C2C2E]">
+                    <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-1">Client Notes</p>
                     <p className="font-barlow text-sm text-white/70">{ci.notes}</p>
                   </div>
                 )}
+
+                {/* Coach response */}
+                <div className="pt-3 border-t border-[#2C2C2E]">
+                  <p className="font-barlow text-xs text-[#C9A84C] uppercase tracking-wider mb-2">Coach Response</p>
+                  {ci.coach_response && !replyText[ci.id] ? (
+                    <div className="border-l-4 border-[#C9A84C] pl-3 py-1 mb-2">
+                      <p className="font-barlow text-sm text-white/70">{ci.coach_response}</p>
+                    </div>
+                  ) : null}
+                  <textarea
+                    value={replyText[ci.id] ?? ci.coach_response ?? ''}
+                    onChange={e => setReplyText(prev => ({ ...prev, [ci.id]: e.target.value }))}
+                    placeholder="Leave a note for your client..."
+                    rows={3}
+                    className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-3 py-2.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors resize-none"
+                  />
+                  <button
+                    onClick={() => saveReply(ci.id)}
+                    disabled={savingReply === ci.id || !replyText[ci.id]?.trim()}
+                    className="mt-2 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-4 py-2 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-40"
+                  >
+                    {savingReply === ci.id ? 'Saving...' : 'Send Response'}
+                  </button>
+                </div>
+
               </div>
             )}
           </div>
