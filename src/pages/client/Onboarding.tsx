@@ -42,7 +42,7 @@ interface ClientInfo {
 function StepDots({ current }: { current: number }) {
   return (
     <div className="flex items-center gap-2.5 justify-center mb-10">
-      {[1, 2, 3, 4, 5].map(s => (
+      {[1, 2, 3, 4].map(s => (
         <div
           key={s}
           className="w-2.5 h-2.5 rounded-full border transition-all duration-300"
@@ -72,11 +72,6 @@ export default function Onboarding() {
   const [step, setStep] = useState(1)
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null)
 
-  // ── Step 2 ──
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [accountError, setAccountError] = useState('')
-  const [creatingAccount, setCreatingAccount] = useState(false)
 
   // ── Step 3 ──
   const [goal, setGoal] = useState('')
@@ -101,9 +96,9 @@ export default function Onboarding() {
     initInvite()
   }, [])
 
-  // Step 6: fire background actions once, auto-navigate after 3s
+  // Step 5: fire background actions once, auto-navigate after 3s
   useEffect(() => {
-    if (step !== 6) return
+    if (step !== 5) return
     if (!finishFiredRef.current) {
       finishFiredRef.current = true
       runBackgroundActions()
@@ -201,36 +196,7 @@ export default function Onboarding() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Step 2 — Create Account
-  // ─────────────────────────────────────────────────────────────────────────
-
-  async function handleCreateAccount() {
-    setAccountError('')
-    if (password.length < 8) { setAccountError('Password must be at least 8 characters.'); return }
-    if (password !== confirmPassword) { setAccountError('Passwords do not match.'); return }
-
-    setCreatingAccount(true)
-
-    const { error: pwErr } = await supabase.auth.updateUser({ password })
-    if (pwErr) { setAccountError(pwErr.message); setCreatingAccount(false); return }
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user && clientInfo?.id) {
-      await supabase.from('profiles').upsert({
-        id: user.id,
-        full_name: clientInfo.full_name,
-        role: 'client',
-      }, { onConflict: 'id' })
-
-      await supabase.from('clients').update({ profile_id: user.id }).eq('id', clientInfo.id)
-    }
-
-    setCreatingAccount(false)
-    setStep(3)
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Step 3 — save About You to clients table
+  // Step 2 — save About You to clients table
   // ─────────────────────────────────────────────────────────────────────────
 
   async function handleAboutNext() {
@@ -241,7 +207,7 @@ export default function Onboarding() {
         limitations: limitations || null,
       }).eq('id', clientInfo.id)
     }
-    setStep(4)
+    setStep(3)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -326,7 +292,7 @@ export default function Onboarding() {
         </p>
 
         {/* Step dots — hide on ready screen */}
-        {step < 6 && <StepDots current={step} />}
+        {step < 5 && <StepDots current={step} />}
 
         {/* ── STEP 1 — WELCOME ── */}
         {step === 1 && (
@@ -353,68 +319,8 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* ── STEP 2 — CREATE ACCOUNT ── */}
+        {/* ── STEP 2 — ABOUT YOU ── */}
         {step === 2 && (
-          <div className="flex flex-col gap-5">
-            <div>
-              <h1 className="font-bebas text-4xl text-white tracking-wide">Create Your Account</h1>
-              <p className="font-barlow text-white/40 text-sm mt-1">Set a password to secure your profile.</p>
-            </div>
-
-            {accountError && (
-              <p className="font-barlow text-sm text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-xl">
-                {accountError}
-              </p>
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="font-barlow text-xs text-white/40 uppercase tracking-wider">Email</label>
-              <input
-                type="email"
-                value={clientInfo?.email ?? ''}
-                disabled
-                className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3.5 font-barlow text-sm text-white/35 cursor-not-allowed"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="font-barlow text-xs text-white/40 uppercase tracking-wider">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="At least 8 characters"
-                autoFocus
-                autoComplete="new-password"
-                className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="font-barlow text-xs text-white/40 uppercase tracking-wider">Confirm Password</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter your password"
-                autoComplete="new-password"
-                onKeyDown={e => e.key === 'Enter' && handleCreateAccount()}
-                className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors"
-              />
-            </div>
-
-            <button
-              onClick={handleCreateAccount}
-              disabled={creatingAccount || !password || !confirmPassword}
-              className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors disabled:opacity-40 mt-2 min-h-[56px]"
-            >
-              {creatingAccount ? 'Creating Account...' : 'Create Account'}
-            </button>
-          </div>
-        )}
-
-        {/* ── STEP 3 — ABOUT YOU ── */}
-        {step === 3 && (
           <div className="flex flex-col gap-6">
             <div>
               <h1 className="font-bebas text-4xl text-white tracking-wide">About You</h1>
@@ -525,8 +431,8 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* ── STEP 4 — TRAINING MAXES ── */}
-        {step === 4 && (
+        {/* ── STEP 3 — TRAINING MAXES ── */}
+        {step === 3 && (
           <div className="flex flex-col gap-5">
             <div>
               <h1 className="font-bebas text-4xl text-white tracking-wide">Your Best Lifts</h1>
@@ -556,13 +462,13 @@ export default function Onboarding() {
             ))}
 
             <button
-              onClick={() => setStep(5)}
+              onClick={() => setStep(4)}
               className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors mt-2 min-h-[56px]"
             >
               Next
             </button>
             <button
-              onClick={() => { setSquat(''); setBench(''); setDeadlift(''); setStep(5) }}
+              onClick={() => { setSquat(''); setBench(''); setDeadlift(''); setStep(4) }}
               className="w-full font-barlow text-sm text-white/30 hover:text-white/60 transition-colors py-3 min-h-[44px]"
             >
               Skip for now
@@ -570,8 +476,8 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* ── STEP 5 — NOTIFICATIONS ── */}
-        {step === 5 && (
+        {/* ── STEP 4 — NOTIFICATIONS ── */}
+        {step === 4 && (
           <div className="flex flex-col gap-6">
             <div>
               <h1 className="font-bebas text-4xl text-white tracking-wide">Stay on Track</h1>
@@ -611,7 +517,7 @@ export default function Onboarding() {
             </div>
 
             <button
-              onClick={() => setStep(6)}
+              onClick={() => setStep(5)}
               className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest py-4 rounded-2xl hover:bg-[#E2C070] transition-colors min-h-[56px]"
             >
               Next
@@ -619,8 +525,8 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* ── STEP 6 — READY ── */}
-        {step === 6 && (
+        {/* ── STEP 5 — READY ── */}
+        {step === 5 && (
           <div className="flex flex-col items-center text-center gap-8 pt-4">
             {/* Animated pulse rings */}
             <div className="relative w-28 h-28 flex items-center justify-center">
