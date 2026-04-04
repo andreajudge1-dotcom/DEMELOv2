@@ -19,6 +19,7 @@ import Progress from './pages/client/Progress'
 import ClientMessages from './pages/client/Messages'
 import Onboarding from './pages/client/Onboarding'
 import ClientHome from './pages/client/Home'
+import CheckIn from './pages/client/CheckIn'
 
 function AppRoutes() {
   const { loading } = useAuth()
@@ -53,6 +54,7 @@ function AppRoutes() {
       <Route path="/client" element={<ClientLayout />}>
         <Route index element={<Navigate to="home" replace />} />
         <Route path="home" element={<ClientHome />} />
+        <Route path="checkin" element={<CheckIn />} />
         <Route path="today" element={<Today />} />
         <Route path="progress" element={<Progress />} />
         <Route path="messages" element={<ClientMessages />} />
