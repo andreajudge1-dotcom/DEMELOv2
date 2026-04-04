@@ -534,11 +534,11 @@ export default function Progress() {
         </div>
       </section>
 
-      {/* ── Section 3: Weekly Volume ── */}
+      {/* ── Section 3: Training Frequency ── */}
       <section className="px-5 mb-8">
-        <h2 className="font-bebas text-xl text-[#C9A84C] tracking-widest mb-4">WEEKLY CHECK-INS</h2>
+        <h2 className="font-bebas text-xl text-[#C9A84C] tracking-widest mb-4">TRAINING FREQUENCY</h2>
         <div className="bg-[#1C1C1E] rounded-2xl p-4">
-          <p className="font-barlow text-[#888] text-xs mb-3">Check-ins per week (last 8 weeks)</p>
+          <p className="font-barlow text-[#888] text-xs mb-3">Weekly check-in submissions (last 8 weeks)</p>
           <BarChart data={weeklyVolume} height={110} />
         </div>
       </section>
