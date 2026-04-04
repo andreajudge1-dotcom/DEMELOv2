@@ -52,54 +52,70 @@ const NAV_ITEMS = [
 export default function ClientLayout() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { signOut } = useAuth()
+  const { profile, signOut } = useAuth()
 
   async function handleSignOut() {
     await signOut()
     navigate('/login')
   }
 
+  const firstName = profile?.full_name?.split(' ')[0] ?? 'Client'
+  const avatarInitial = profile?.full_name?.charAt(0)?.toUpperCase() ?? 'C'
+
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
-      {/* Logout button — fixed top right */}
-      <button
-        onClick={handleSignOut}
-        className="fixed top-4 right-4 z-50 flex items-center gap-1.5 bg-[#1C1C1E]/90 backdrop-blur border border-[#2C2C2E] rounded-full px-3 py-1.5"
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-          <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <span className="font-barlow text-[11px] text-white/30 tracking-wide">Log out</span>
-      </button>
-
-      <main className="pb-24">
+      <main className="pb-[112px]">
         <Outlet />
       </main>
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[#1C1C1E]/95 backdrop-blur border-t border-[#2C2C2E] z-50">
-        <div className="max-w-[390px] mx-auto flex items-center justify-around px-2 py-2">
-          {NAV_ITEMS.map(item => {
-            const active = location.pathname === item.path
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className="flex flex-col items-center gap-1 px-3 py-2 min-w-[56px] min-h-[56px] justify-center"
-              >
-                {item.icon(active)}
-                <span
-                  className="font-barlow text-[10px] tracking-wide"
-                  style={{ color: active ? '#C9A84C' : 'rgba(255,255,255,0.3)' }}
+      {/* Bottom nav — matches trainer sidebar bottom section */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-[#1C1C1E] border-t border-[#2C2C2E] z-50">
+        <div className="max-w-[390px] mx-auto">
+
+          {/* User strip — mirrors trainer sidebar footer */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-[#2C2C2E]">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
+                <span className="font-bebas text-sm text-[#C9A84C]">{avatarInitial}</span>
+              </div>
+              <div>
+                <p className="font-barlow text-sm text-white font-medium leading-tight">{firstName}</p>
+                <p className="font-barlow text-xs text-white/40 leading-tight">Athlete</p>
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="font-barlow text-sm text-white/50 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-[#2C2C2E]"
+            >
+              Sign out
+            </button>
+          </div>
+
+          {/* Tab icons */}
+          <div className="flex items-center justify-around px-2 py-2">
+            {NAV_ITEMS.map(item => {
+              const active = location.pathname === item.path
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className="flex flex-col items-center gap-1 px-3 py-1.5 min-w-[52px] justify-center"
                 >
-                  {item.label}
-                </span>
-                {active && (
-                  <div className="w-1 h-1 rounded-full bg-[#C9A84C]" />
-                )}
-              </button>
-            )
-          })}
+                  {item.icon(active)}
+                  <span
+                    className="font-barlow text-[10px] tracking-wide"
+                    style={{ color: active ? '#C9A84C' : 'rgba(255,255,255,0.3)' }}
+                  >
+                    {item.label}
+                  </span>
+                  {active && (
+                    <div className="w-1 h-1 rounded-full bg-[#C9A84C]" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
         </div>
       </nav>
     </div>
