@@ -703,6 +703,7 @@ function ProgramTab({
   const [libraryPrograms, setLibraryPrograms] = useState<LibraryProgram[]>([])
   const [loadingLibrary, setLoadingLibrary] = useState(false)
   const [assigning, setAssigning] = useState<string | null>(null)
+  const [assignError, setAssignError] = useState('')
   const [search, setSearch] = useState('')
   const [activeTag, setActiveTag] = useState<string | null>(null)
 
@@ -735,9 +736,10 @@ function ProgramTab({
 
   async function assignProgram(program: LibraryProgram) {
     setAssigning(program.id)
+    setAssignError('')
     try {
       // 1. Deep copy the library program into a new cycle
-      const { data: newCycle } = await supabase
+      const { data: newCycle, error: cycleErr } = await supabase
         .from('training_cycles')
         .insert({
           trainer_id: trainerId,
@@ -751,7 +753,7 @@ function ProgramTab({
         })
         .select()
         .single()
-      if (!newCycle) throw new Error('Failed to create cycle copy')
+      if (!newCycle) throw new Error(cycleErr?.message ?? 'Failed to create cycle copy')
 
       // 2. Copy workouts
       const { data: workouts } = await supabase
@@ -832,8 +834,9 @@ function ProgramTab({
 
       setShowAssignModal(false)
       onAssigned()
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      console.error('assignProgram error:', err)
+      setAssignError(err?.message ?? 'Assignment failed')
     } finally {
       setAssigning(null)
     }
@@ -854,6 +857,13 @@ function ProgramTab({
                 className="text-white/40 hover:text-white transition-colors text-xl"
               >×</button>
             </div>
+
+            {/* Error */}
+            {assignError && (
+              <p className="mx-4 mt-3 font-barlow text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                {assignError}
+              </p>
+            )}
 
             {/* Search + tag filters */}
             {!loadingLibrary && libraryPrograms.length > 0 && (
