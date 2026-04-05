@@ -25,6 +25,7 @@ interface CheckInRecord {
 
 interface ClientInfo {
   id: string
+  full_name: string
   trainer_id: string
   trainer_name: string
 }
@@ -53,13 +54,6 @@ function getWeekRange(monday: Date): string {
 
 function toDateStr(d: Date): string {
   return d.toISOString().split('T')[0]
-}
-
-function scoreColor(s: number | null): string {
-  if (!s) return '#3A3A3C'
-  if (s >= 4) return '#22c55e'
-  if (s === 3) return '#C9A84C'
-  return '#ef4444'
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -175,91 +169,6 @@ const ANGLE_LABELS: Record<PhotoAngle, string> = {
 const PHOTO_ANGLES: PhotoAngle[] = ['front', 'side_left', 'side_right', 'back']
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Compare Modal
-// ─────────────────────────────────────────────────────────────────────────────
-
-function CompareModal({
-  checkIns,
-  onClose,
-}: {
-  checkIns: CheckInRecord[]
-  onClose: () => void
-}) {
-  const withPhotos = checkIns.filter(c => c.photo_front_url)
-  const [leftId, setLeftId] = useState(withPhotos[0]?.id ?? '')
-  const [rightId, setRightId] = useState(withPhotos[1]?.id ?? '')
-
-  const left = withPhotos.find(c => c.id === leftId)
-  const right = withPhotos.find(c => c.id === rightId)
-
-  const metrics: { key: keyof CheckInRecord; label: string }[] = [
-    { key: 'sleep_score', label: 'Sleep' },
-    { key: 'nutrition_score', label: 'Nutrition' },
-    { key: 'fatigue_score', label: 'Fatigue' },
-    { key: 'soreness_score', label: 'Soreness' },
-    { key: 'performance_score', label: 'Performance' },
-  ]
-
-  return (
-    <div className="fixed inset-0 bg-black/90 z-50 flex flex-col overflow-y-auto">
-      <div className="flex items-center justify-between px-4 pt-10 pb-4 border-b border-[#2C2C2E]">
-        <h2 className="font-bebas text-2xl text-white tracking-wide">Compare</h2>
-        <button onClick={onClose} className="text-white/40 hover:text-white text-3xl leading-none">×</button>
-      </div>
-
-      <div className="flex gap-3 px-4 py-4 flex-1">
-        {[{ id: leftId, setId: setLeftId, record: left }, { id: rightId, setId: setRightId, record: right }].map((side, i) => (
-          <div key={i} className="flex-1 flex flex-col gap-3">
-            <select
-              value={side.id}
-              onChange={e => side.setId(e.target.value)}
-              className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-3 py-2 font-barlow text-xs text-white outline-none"
-            >
-              {withPhotos.map(c => (
-                <option key={c.id} value={c.id}>
-                  Week of {getWeekRange(getMondayOfWeek(new Date(c.week_start + 'T00:00:00')))}
-                </option>
-              ))}
-            </select>
-
-            {side.record?.photo_front_url && (
-              <img
-                src={side.record.photo_front_url}
-                alt="Progress"
-                className="w-full aspect-[3/4] object-cover rounded-2xl"
-              />
-            )}
-
-            <div className="flex flex-col gap-1.5">
-              {metrics.map(m => {
-                const val = side.record?.[m.key] as number | null
-                return (
-                  <div key={m.key} className="flex items-center justify-between">
-                    <span className="font-barlow text-xs text-white/40">{m.label}</span>
-                    <span
-                      className="font-bebas text-base leading-none"
-                      style={{ color: scoreColor(val) }}
-                    >
-                      {val ?? '—'}
-                    </span>
-                  </div>
-                )
-              })}
-              {side.record?.body_weight && (
-                <div className="flex items-center justify-between">
-                  <span className="font-barlow text-xs text-white/40">Weight</span>
-                  <span className="font-barlow text-xs text-white/70">{side.record.body_weight} lbs</span>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -273,7 +182,8 @@ export default function CheckIn() {
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null)
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
   const [thisWeekDone, setThisWeekDone] = useState(false)
-  const [showCompare, setShowCompare] = useState(false)
+  const [existingCheckInId, setExistingCheckInId] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
 
   // Form — wellness
   const [sleep, setSleep] = useState<number | null>(null)
@@ -317,7 +227,7 @@ export default function CheckIn() {
 
     const { data: clientRow } = await supabase
       .from('clients')
-      .select('id, trainer_id')
+      .select('id, full_name, trainer_id')
       .eq('profile_id', userId)
       .maybeSingle()
 
@@ -331,6 +241,7 @@ export default function CheckIn() {
 
     setClientInfo({
       id: clientRow.id,
+      full_name: clientRow.full_name ?? '',
       trainer_id: clientRow.trainer_id,
       trainer_name: trainerRow?.full_name?.split(' ')[0] ?? 'Your coach',
     })
@@ -342,7 +253,21 @@ export default function CheckIn() {
       .order('week_start', { ascending: false })
 
     setCheckIns((ciRows ?? []) as CheckInRecord[])
-    setThisWeekDone((ciRows ?? []).some(c => c.week_start === thisMondayStr))
+    const existingThisWeek = (ciRows ?? []).find(c => c.week_start === thisMondayStr)
+    setThisWeekDone(!!existingThisWeek)
+    setExistingCheckInId(existingThisWeek?.id ?? null)
+
+    // Pre-fill form if already submitted
+    if (existingThisWeek) {
+      setSleep(existingThisWeek.sleep_score)
+      setNutrition(existingThisWeek.nutrition_score)
+      setFatigue(existingThisWeek.fatigue_score)
+      setSoreness(existingThisWeek.soreness_score)
+      setPerformance(existingThisWeek.performance_score)
+      setBodyWeight(existingThisWeek.body_weight ? String(existingThisWeek.body_weight) : '')
+      setNotes(existingThisWeek.notes ?? '')
+    }
+
     setLoading(false)
   }
 
@@ -383,7 +308,7 @@ export default function CheckIn() {
       photos.back ? uploadPhoto('back', photos.back) : Promise.resolve(null),
     ])
 
-    const { error } = await supabase.from('check_ins').insert({
+    const payload = {
       client_id: clientInfo.id,
       trainer_id: clientInfo.trainer_id,
       week_start: thisMondayStr,
@@ -402,7 +327,18 @@ export default function CheckIn() {
       photo_side_left_url: sideLeftUrl,
       photo_side_right_url: sideRightUrl,
       photo_back_url: backUrl,
-    })
+    }
+
+    let error
+    if (existingCheckInId) {
+      // Update existing check-in
+      const res = await supabase.from('check_ins').update(payload).eq('id', existingCheckInId)
+      error = res.error
+    } else {
+      // Insert new check-in
+      const res = await supabase.from('check_ins').insert(payload)
+      error = res.error
+    }
 
     if (error) {
       setSubmitError(error.message)
@@ -410,6 +346,15 @@ export default function CheckIn() {
       return
     }
 
+    // Notify trainer
+    await supabase.from('notifications').insert({
+      profile_id: clientInfo.trainer_id,
+      title: `${clientInfo.full_name} submitted their weekly check-in`,
+      body: null,
+      read_at: null,
+    })
+
+    setShowForm(false)
     setSubmitting(false)
     await loadAll(profile!.id)
   }
@@ -424,126 +369,52 @@ export default function CheckIn() {
   }
 
   const trainerName = clientInfo?.trainer_name ?? 'Your coach'
-  const checkInsWithPhotos = checkIns.filter(c => c.photo_front_url)
 
   // ─────────────────────────────────────────────────────────────────────────
-  // HISTORY STATE
+  // ALREADY SUBMITTED — show success card + option to update, unless showForm
   // ─────────────────────────────────────────────────────────────────────────
 
-  if (thisWeekDone) {
-    return (
-      <div className="min-h-screen bg-[#0A0A0A] pb-28">
-        {showCompare && checkInsWithPhotos.length >= 2 && (
-          <CompareModal checkIns={checkIns} onClose={() => setShowCompare(false)} />
-        )}
-
-        <div className="max-w-[390px] mx-auto px-4 pt-12">
-
-          {/* Success banner */}
-          <div className="flex items-center gap-3 border border-[#C9A84C]/30 bg-[#C9A84C]/8 rounded-2xl px-4 py-4 mb-5">
-            <div className="w-9 h-9 rounded-full bg-[#C9A84C]/20 flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <div>
-              <p className="font-bebas text-xl text-white tracking-wide leading-none">This week is checked in.</p>
-              <p className="font-barlow text-sm text-white/40 mt-0.5">{trainerName} will review it soon.</p>
-            </div>
-          </div>
-
-          {/* Compare button */}
-          {checkInsWithPhotos.length >= 2 && (
-            <button
-              onClick={() => setShowCompare(true)}
-              className="w-full mb-4 border border-[#C9A84C]/30 bg-[#C9A84C]/8 rounded-2xl py-3.5 font-bebas text-lg text-[#C9A84C] tracking-wide hover:bg-[#C9A84C]/15 transition-colors min-h-[50px]"
-            >
-              Compare Progress Photos
-            </button>
-          )}
-
-          {/* History */}
-          <h2 className="font-bebas text-3xl text-white tracking-wide mb-4">Past Check-Ins</h2>
-
-          <div className="flex flex-col gap-4">
-            {checkIns.map(ci => {
-              const scores = [
-                { label: 'Sleep', val: ci.sleep_score },
-                { label: 'Nutrition', val: ci.nutrition_score },
-                { label: 'Fatigue', val: ci.fatigue_score },
-                { label: 'Soreness', val: ci.soreness_score },
-                { label: 'Performance', val: ci.performance_score },
-              ]
-              const monday = getMondayOfWeek(new Date(ci.week_start + 'T00:00:00'))
-              const range = getWeekRange(monday)
-
-              return (
-                <div key={ci.id} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-4">
-                  {/* Header row */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="font-bebas text-base text-white tracking-wide">Week of {range}</p>
-                      {ci.body_weight && (
-                        <p className="font-barlow text-xs text-white/40 mt-0.5">{ci.body_weight} lbs</p>
-                      )}
-                    </div>
-                    {ci.photo_front_url && (
-                      <img
-                        src={ci.photo_front_url}
-                        alt="Progress"
-                        className="w-14 h-14 rounded-xl object-cover flex-shrink-0 ml-3"
-                      />
-                    )}
-                  </div>
-
-                  {/* Score squares */}
-                  <div className="flex gap-1.5 mb-3">
-                    {scores.map(s => (
-                      <div
-                        key={s.label}
-                        className="flex-1 flex flex-col items-center gap-1 rounded-lg py-2"
-                        style={{ background: `${scoreColor(s.val)}18` }}
-                      >
-                        <span className="font-bebas text-base leading-none" style={{ color: scoreColor(s.val) }}>
-                          {s.val ?? '—'}
-                        </span>
-                        <span className="font-barlow text-[9px] text-white/30">{s.label}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Notes */}
-                  {ci.notes && (
-                    <p className="font-barlow text-sm text-white/50 leading-relaxed line-clamp-2 mb-3 border-t border-[#2C2C2E] pt-3">
-                      {ci.notes}
-                    </p>
-                  )}
-
-                  {/* Coach response */}
-                  {ci.coach_response && (
-                    <div className="border-l-4 border-[#C9A84C] bg-[#C9A84C]/8 rounded-r-xl pl-3 pr-3 py-3">
-                      <p className="font-barlow text-[11px] text-[#C9A84C] uppercase tracking-wider mb-1">Coach note:</p>
-                      <p className="font-barlow text-sm text-white/70 leading-relaxed">{ci.coach_response}</p>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const thisWeekRecord = checkIns.find(c => c.week_start === thisMondayStr)
+  const submittedDate = thisWeekRecord
+    ? new Date(thisWeekRecord.week_start + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SUBMISSION STATE
+  // RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] pb-28">
       <div className="max-w-[390px] mx-auto px-4 pt-12">
 
-        {/* ── SECTION 1: HEADER ── */}
+        {/* ── Already submitted success card ── */}
+        {thisWeekDone && !showForm && (
+          <div className="mb-5">
+            <div className="flex items-center gap-3 border border-green-500/30 bg-green-500/5 rounded-2xl px-4 py-4 mb-3">
+              <div className="w-9 h-9 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-bebas text-xl text-white tracking-wide leading-none">You checked in this week</p>
+                {submittedDate && (
+                  <p className="font-barlow text-sm text-white/40 mt-0.5">Submitted {submittedDate}</p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full bg-[#1C1C1E] border border-[#C9A84C]/30 rounded-xl font-barlow text-sm text-[#C9A84C] py-3 hover:bg-[#C9A84C]/5 transition-colors"
+            >
+              Update my check-in
+            </button>
+          </div>
+        )}
+
+        {/* ── SECTION 1: HEADER + FORM ── */}
+        {(!thisWeekDone || showForm) && (
+        <>
         <div className="mb-6">
           <h1 className="font-bebas text-4xl text-white tracking-wide">Weekly Check-In</h1>
           <p className="font-barlow text-sm text-white/40 mt-1">{trainerName} reviews these every week.</p>
@@ -706,6 +577,8 @@ export default function CheckIn() {
           <p className="font-barlow text-xs text-white/25 text-center mt-2 mb-4">
             Rate all 5 wellness metrics to continue
           </p>
+        )}
+        </>
         )}
 
       </div>
