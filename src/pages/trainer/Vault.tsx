@@ -82,6 +82,7 @@ export default function Vault() {
       client_id: null,
       trainer_id: profile.id,
       name: file.name,
+      title: file.name,
       file_url: urlData.publicUrl,
       file_type: ext,
       file_size: file.size,

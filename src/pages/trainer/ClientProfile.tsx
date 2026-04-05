@@ -2165,6 +2165,7 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
       client_id: clientId,
       trainer_id: trainerId,
       name: file.name,
+      title: file.name,
       file_url: urlData.publicUrl,
       file_type: ext,
       file_size: file.size,
