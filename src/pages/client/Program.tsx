@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -74,6 +74,8 @@ function getSundayOfWeek(date: Date): Date {
 export default function ClientProgram() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const dayParam = searchParams.get('day') ? parseInt(searchParams.get('day')!) : null
 
   const [loading, setLoading] = useState(true)
   const [clientId, setClientId] = useState('')
@@ -144,9 +146,10 @@ export default function ClientProgram() {
       .lte('completed_at', sunday.toISOString())
     setCompletedSessions(sessionRows ?? [])
 
-    // Default to suggested day tab
-    const suggestedIdx = (workoutRows ?? []).findIndex(w => w.day_number === assignRow.next_day_number)
-    setSelectedDayIdx(suggestedIdx >= 0 ? suggestedIdx : 0)
+    // Default to day from URL param, or suggested day
+    const targetDay = dayParam ?? assignRow.next_day_number
+    const targetIdx = (workoutRows ?? []).findIndex(w => w.day_number === targetDay)
+    setSelectedDayIdx(targetIdx >= 0 ? targetIdx : 0)
 
     setLoading(false)
   }

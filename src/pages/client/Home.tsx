@@ -96,6 +96,7 @@ export default function ClientHome() {
   const [completedSessions, setCompletedSessions] = useState<Session[]>([])
   const [currentWeek, setCurrentWeek] = useState(1)
   const [startingSession, setStartingSession] = useState(false)
+  const [dayExerciseCounts, setDayExerciseCounts] = useState<Record<string, number>>({})
   const [showDayPicker, setShowDayPicker] = useState(false)
   const [showExtraSheet, setShowExtraSheet] = useState(false)
   const [extraType, setExtraType] = useState<string | null>(null)
@@ -147,6 +148,20 @@ export default function ClientHome() {
       .eq('cycle_id', assignRow.cycle_id)
       .order('day_number')
     setWorkouts(workoutRows ?? [])
+
+    // Exercise counts per workout
+    if (workoutRows && workoutRows.length > 0) {
+      const ids = workoutRows.map(w => w.id)
+      const { data: weData } = await supabase
+        .from('workout_exercises')
+        .select('workout_id')
+        .in('workout_id', ids)
+      if (weData) {
+        const counts: Record<string, number> = {}
+        weData.forEach(row => { counts[row.workout_id] = (counts[row.workout_id] ?? 0) + 1 })
+        setDayExerciseCounts(counts)
+      }
+    }
 
     // Sessions completed this week
     const monday = getMondayOfWeek(new Date())
@@ -500,6 +515,14 @@ export default function ClientHome() {
                 )}
               </div>
 
+              {/* View today's workout link */}
+              <button
+                onClick={() => navigate(`/client/program?day=${suggestedWorkout.day_number}`)}
+                className="w-full mb-3 font-barlow text-xs text-[#C9A84C]/70 hover:text-[#C9A84C] transition-colors"
+              >
+                View today's workout
+              </button>
+
               {/* START SESSION button */}
               <button
                 onClick={() => startSession()}
@@ -545,32 +568,42 @@ export default function ClientHome() {
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
               {workouts.map(w => {
                 const isDone = completedSessions.some(s => s.workout_id === w.id)
-                const isSuggested = w.id === suggestedWorkout?.id
+                const isToday = w.id === suggestedWorkout?.id
+                const isRest = w.focus === 'rest_day'
+                const count = dayExerciseCounts[w.id] ?? 0
+                const statusLabel = isDone ? 'Done' : isToday ? 'Today' : isRest ? 'Rest' : 'Available'
+                const statusColor = isDone ? 'text-green-400 bg-green-500/15' : isToday ? 'text-[#C9A84C] bg-[#C9A84C]/15' : 'text-white/30 bg-white/5'
+
                 return (
                   <button
                     key={w.id}
-                    onClick={() => { setShowDayPicker(false); startSession(w) }}
+                    onClick={() => {
+                      if (isRest) return
+                      setShowDayPicker(false)
+                      navigate(`/client/program?day=${w.day_number}`)
+                    }}
+                    disabled={isRest}
                     className={`flex items-center gap-3 p-3.5 rounded-xl text-left transition-colors border ${
-                      isDone ? 'bg-green-500/5 border-green-500/20' : isSuggested ? 'border-[#C9A84C]/30 bg-[#C9A84C]/5 hover:bg-[#C9A84C]/10' : 'border-[#2C2C2E] bg-[#2C2C2E] hover:bg-[#3A3A3C]'
+                      isDone ? 'bg-green-500/5 border-green-500/20'
+                        : isToday ? 'border-[#C9A84C]/30 bg-[#C9A84C]/5'
+                        : isRest ? 'border-[#2C2C2E] bg-[#1C1C1E] opacity-40'
+                        : 'border-[#2C2C2E] bg-[#2C2C2E] hover:bg-[#3A3A3C]'
                     }`}
                   >
                     <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      isSuggested ? 'bg-[#C9A84C] text-black' : 'bg-[#3A3A3C] text-white/50'
+                      isToday ? 'bg-[#C9A84C] text-black' : isDone ? 'bg-green-500/20 text-green-400' : 'bg-[#3A3A3C] text-white/50'
                     }`}>
-                      <span className="font-bebas text-base">{w.day_number}</span>
+                      <span className="font-bebas text-base">{isRest ? 'R' : w.day_number}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-barlow text-sm text-white truncate">{w.name}</p>
-                      {w.focus && <p className="font-barlow text-xs text-white/30 capitalize">{w.focus}</p>}
+                      <p className="font-barlow text-xs text-white/30 mt-0.5">
+                        {isRest ? 'Recovery day' : `${count} exercise${count !== 1 ? 's' : ''}`}
+                      </p>
                     </div>
-                    {isDone && (
-                      <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                    {isSuggested && !isDone && (
-                      <span className="font-barlow text-[10px] text-[#C9A84C] uppercase tracking-wider">Suggested</span>
-                    )}
+                    <span className={`font-barlow text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full flex-shrink-0 ${statusColor}`}>
+                      {statusLabel}
+                    </span>
                   </button>
                 )
               })}
