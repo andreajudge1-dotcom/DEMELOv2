@@ -23,6 +23,8 @@ import CheckIn from './pages/client/CheckIn'
 import TrainerSession from './pages/trainer/Session'
 import ClientSession from './pages/client/Session'
 import ClientProgram from './pages/client/Program'
+import Nutrition from './pages/trainer/Nutrition'
+import Analytics from './pages/trainer/Analytics'
 import ClientVault from './pages/client/Vault'
 
 function AppRoutes() {
@@ -55,6 +57,8 @@ function AppRoutes() {
         <Route path="vault" element={<Vault />} />
         <Route path="messages" element={<Messages />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="nutrition" element={<Nutrition />} />
+        <Route path="analytics" element={<Analytics />} />
       </Route>
       <Route path="/client" element={<ClientLayout />}>
         <Route index element={<Navigate to="home" replace />} />
