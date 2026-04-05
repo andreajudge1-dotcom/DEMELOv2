@@ -321,7 +321,7 @@ export default function ClientProgram() {
             <p className="font-barlow text-sm text-white/30">Recovery is part of the program. Rest up.</p>
           </div>
         ) : selectedWorkout ? (
-          <div>
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-5">
             {/* Day name */}
             <h2 className="font-bebas text-2xl text-white tracking-wide mb-4">{selectedWorkout.name}</h2>
 
@@ -333,11 +333,11 @@ export default function ClientProgram() {
             ) : exercises.length === 0 ? (
               <p className="font-barlow text-sm text-white/30 text-center py-8">No exercises programmed for this day.</p>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-4">
                 {exercises.map((ex, i) => (
-                  <div key={i} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4">
+                  <div key={i} className={i > 0 ? 'pt-4 border-t border-[#2C2C2E]' : ''}>
                     {/* Exercise header */}
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3 mb-2">
                       <div className="w-7 h-7 rounded-full bg-[#C9A84C]/15 flex items-center justify-center flex-shrink-0">
                         <span className="font-bebas text-sm text-[#C9A84C]">{i + 1}</span>
                       </div>
@@ -376,7 +376,7 @@ export default function ClientProgram() {
             )}
 
             {/* Bottom action */}
-            <div className="mt-5">
+            <div className="mt-4 pt-4 border-t border-[#2C2C2E]">
               {isDayCompleted ? (
                 <button
                   onClick={() => completedSessionId && navigate(`/client/session/${completedSessionId}`)}
