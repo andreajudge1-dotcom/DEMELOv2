@@ -77,6 +77,7 @@ interface SessionSet {
 interface CheckIn {
   id: string
   week_start: string
+  created_at: string
   sleep_score: number | null
   nutrition_score: number | null
   fatigue_score: number | null
@@ -1671,66 +1672,120 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
         </div>
       )}
 
-      {checkIns.map(ci => {
+      {checkIns.map((ci, idx) => {
         const isOpen = expanded === ci.id
-        const photos = [
+
+        const scoreItems = [
+          { label: 'Sleep', abbr: 'Slp', val: ci.sleep_score },
+          { label: 'Nutrition', abbr: 'Nut', val: ci.nutrition_score },
+          { label: 'Fatigue', abbr: 'Fat', val: ci.fatigue_score },
+          { label: 'Soreness', abbr: 'Sor', val: ci.soreness_score },
+          { label: 'Performance', abbr: 'Per', val: ci.performance_score },
+        ]
+
+        const scores = scoreItems.map(s => s.val).filter((v): v is number => v !== null)
+        const avg = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null
+        const avgColor = avg === null ? 'bg-[#2C2C2E] text-white/25' : avg >= 4 ? 'bg-green-500/25 text-green-400' : avg >= 2.5 ? 'bg-yellow-500/25 text-yellow-400' : 'bg-red-500/25 text-red-400'
+
+        // Trend: compare to previous check-in
+        const prevCI = checkIns[idx + 1]
+        let trendArrow: 'up' | 'down' | 'flat' = 'flat'
+        if (prevCI && avg !== null) {
+          const prevScores = [prevCI.sleep_score, prevCI.nutrition_score, prevCI.fatigue_score, prevCI.soreness_score, prevCI.performance_score].filter((v): v is number => v !== null)
+          const prevAvg = prevScores.length > 0 ? prevScores.reduce((a, b) => a + b, 0) / prevScores.length : null
+          if (prevAvg !== null) {
+            if (avg > prevAvg + 0.05) trendArrow = 'up'
+            else if (avg < prevAvg - 0.05) trendArrow = 'down'
+          }
+        }
+
+        // Red flags: scores <= 2
+        const flags = scoreItems.filter(s => s.val !== null && s.val <= 2)
+
+        const allPhotos = [
           { label: 'Front', url: ci.photo_front_url },
           { label: 'Side L', url: ci.photo_side_left_url },
           { label: 'Side R', url: ci.photo_side_right_url },
           { label: 'Back', url: ci.photo_back_url },
-        ].filter(p => p.url)
-
-        const scoreItems = [
-          { label: 'Sleep', val: ci.sleep_score },
-          { label: 'Nutrition', val: ci.nutrition_score },
-          { label: 'Fatigue', val: ci.fatigue_score },
-          { label: 'Soreness', val: ci.soreness_score },
-          { label: 'Performance', val: ci.performance_score },
         ]
+        const photoCount = allPhotos.filter(p => p.url).length
 
         return (
           <div key={ci.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden">
-            {/* Header — always visible */}
+            {/* ── COLLAPSED HEADER ── */}
             <button
               onClick={() => setExpanded(isOpen ? null : ci.id)}
-              className="w-full px-5 py-4 flex items-center gap-4 text-left hover:bg-[#222] transition-colors"
+              className="w-full px-4 py-3.5 flex items-center gap-3 text-left hover:bg-[#222] transition-colors"
             >
+              {/* Left: date info */}
               <div className="flex-1 min-w-0">
                 <p className="font-barlow font-semibold text-sm text-white">Week of {fmtDate(ci.week_start)}</p>
-                <p className="font-barlow text-xs text-white/40 mt-0.5">
-                  {ci.body_weight ? `${ci.body_weight} lbs` : ''}
-                  {photos.length > 0 ? `${ci.body_weight ? ' · ' : ''}${photos.length} photos` : ''}
-                  {!ci.coach_response ? ' · Needs response' : ''}
+                <p className="font-barlow text-xs text-white/30 mt-0.5">
+                  Submitted {ci.created_at ? new Date(ci.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : fmtDate(ci.week_start)}
                 </p>
+                {/* Stats line */}
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {ci.body_weight && <span className="font-barlow text-xs text-white/40">{ci.body_weight} lbs</span>}
+                  {photoCount > 0 && <span className="font-barlow text-xs text-white/30">{photoCount} photo{photoCount > 1 ? 's' : ''}</span>}
+                  {!ci.coach_response && <span className="font-barlow text-[10px] text-[#C9A84C]/70 bg-[#C9A84C]/10 px-1.5 py-0.5 rounded">Needs response</span>}
+                </div>
               </div>
-              <div className="flex gap-1">
-                {scoreItems.map(({ label, val }) => (
-                  <div key={label} className="text-center">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bebas text-sm ${
-                      val === null ? 'bg-[#2C2C2E] text-white/25'
-                      : val >= 4 ? 'bg-green-500/20 text-green-400'
-                      : val === 3 ? 'bg-yellow-500/20 text-yellow-400'
-                      : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {val ?? '—'}
-                    </div>
-                    <p className="font-barlow text-white/25 mt-0.5" style={{ fontSize: 8 }}>{label.slice(0, 3)}</p>
+
+              {/* Right: overall score + trend + flags */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Red flags */}
+                {flags.length > 0 && (
+                  <div className="flex gap-1">
+                    {flags.map(f => (
+                      <span key={f.abbr} className="font-barlow text-[9px] font-semibold bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">
+                        {f.abbr}
+                      </span>
+                    ))}
                   </div>
-                ))}
+                )}
+
+                {/* Trend arrow */}
+                <div className="w-4 flex items-center justify-center">
+                  {trendArrow === 'up' && <span className="text-green-400 text-sm">↑</span>}
+                  {trendArrow === 'down' && <span className="text-red-400 text-sm">↓</span>}
+                  {trendArrow === 'flat' && <span className="text-white/20 text-sm">—</span>}
+                </div>
+
+                {/* Overall score circle */}
+                <div className="text-center">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${avgColor}`}>
+                    <span className="font-bebas" style={{ fontSize: 22 }}>{avg ?? '—'}</span>
+                  </div>
+                  <p className="font-barlow text-white/20 mt-0.5" style={{ fontSize: 8 }}>Overall</p>
+                </div>
+
+                {/* Expand arrow */}
+                <span className="font-barlow text-xs text-white/20 ml-1">{isOpen ? '▲' : '▼'}</span>
               </div>
-              <span className="font-barlow text-xs text-white/25">{isOpen ? '▲' : '▼'}</span>
             </button>
 
-            {/* Expanded detail */}
+            {/* ── EXPANDED DETAIL ── */}
             {isOpen && (
               <div className="border-t border-[#2C2C2E] px-5 py-4 bg-[#171717] flex flex-col gap-4">
 
-                {/* Scores with bars */}
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                {/* Five metric rows with score dots */}
+                <div className="flex flex-col gap-3">
                   {scoreItems.map(({ label, val }) => (
-                    <div key={label}>
-                      <p className="font-barlow text-xs text-white/40 mb-1">{label}</p>
-                      {scoreBar(val, 5)}
+                    <div key={label} className="flex items-center justify-between">
+                      <p className="font-barlow text-sm text-white/60">{label}</p>
+                      <div className="flex gap-1.5">
+                        {[1, 2, 3, 4, 5].map(n => {
+                          const isSelected = val === n
+                          const dotColor = isSelected
+                            ? (n >= 4 ? 'bg-green-500 border-green-500' : n === 3 ? 'bg-yellow-500 border-yellow-500' : 'bg-red-500 border-red-500')
+                            : 'bg-transparent border-[#3A3A3C]'
+                          return (
+                            <div key={n} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${dotColor}`}>
+                              {isSelected && <span className="font-barlow text-[10px] font-bold text-black">{n}</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1749,22 +1804,28 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
                   </div>
                 )}
 
-                {/* Photos — 80px tappable thumbnails */}
-                {photos.length > 0 && (
-                  <div className="pt-3 border-t border-[#2C2C2E]">
-                    <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Progress Photos</p>
-                    <div className="flex gap-2">
-                      {photos.map(p => (
-                        <button key={p.label} onClick={() => setLightboxUrl(p.url!)} className="flex flex-col items-center gap-1 group">
-                          <img src={p.url!} alt={p.label} className="w-20 h-20 object-cover rounded-lg group-hover:ring-2 ring-[#C9A84C]/50 transition-all" />
-                          <span className="font-barlow text-[10px] text-white/30">{p.label}</span>
-                        </button>
-                      ))}
-                    </div>
+                {/* Photos — 2x2 grid, 80px, with placeholders */}
+                <div className="pt-3 border-t border-[#2C2C2E]">
+                  <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Progress Photos</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {allPhotos.map(p => (
+                      <div key={p.label} className="flex flex-col items-center gap-1">
+                        {p.url ? (
+                          <button onClick={() => setLightboxUrl(p.url!)} className="group">
+                            <img src={p.url} alt={p.label} className="w-20 h-20 object-cover rounded-lg group-hover:ring-2 ring-[#C9A84C]/50 transition-all" />
+                          </button>
+                        ) : (
+                          <div className="w-20 h-20 bg-[#2C2C2E] rounded-lg flex items-center justify-center">
+                            <span className="font-barlow text-[9px] text-white/15">No photo</span>
+                          </div>
+                        )}
+                        <span className="font-barlow text-[10px] text-white/25">{p.label}</span>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
 
-                {/* Client notes — quote style */}
+                {/* Client notes */}
                 {ci.notes && (
                   <div className="pt-3 border-t border-[#2C2C2E]">
                     <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Client Notes</p>
