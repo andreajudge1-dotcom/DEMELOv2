@@ -22,6 +22,7 @@ import ClientHome from './pages/client/Home'
 import CheckIn from './pages/client/CheckIn'
 import TrainerSession from './pages/trainer/Session'
 import ClientSession from './pages/client/Session'
+import ClientProgram from './pages/client/Program'
 
 function AppRoutes() {
   const { loading } = useAuth()
@@ -60,6 +61,7 @@ function AppRoutes() {
         <Route path="checkin" element={<CheckIn />} />
         <Route path="today" element={<Today />} />
         <Route path="session/:sessionId" element={<ClientSession />} />
+        <Route path="program" element={<ClientProgram />} />
         <Route path="progress" element={<Progress />} />
         <Route path="messages" element={<ClientMessages />} />
       </Route>

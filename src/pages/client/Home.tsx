@@ -431,7 +431,7 @@ export default function ClientHome() {
             </span>
           </div>
           <button
-            onClick={() => navigate('/client/progress')}
+            onClick={() => navigate('/client/program')}
             className="inline-flex items-center gap-1.5 bg-[#2C2C2E] hover:bg-[#3A3A3C] border border-[#3A3A3C] rounded-full px-3 py-1.5 transition-colors"
           >
             <span className="font-barlow text-xs text-white/60">View program</span>
