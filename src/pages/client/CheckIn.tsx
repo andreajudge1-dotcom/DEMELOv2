@@ -509,7 +509,6 @@ export default function CheckIn() {
                   ref={el => { fileRefs.current[angle] = el }}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   className="hidden"
                   onChange={e => handlePhotoSelect(angle, e)}
                 />
