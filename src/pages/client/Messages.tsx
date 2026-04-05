@@ -237,10 +237,11 @@ export default function ClientMessages() {
   const trainerInitials = initials(trainer?.full_name ?? null)
 
   return (
-    <div className="flex flex-col bg-[#0A0A0A]" style={{ height: '100dvh' }}>
+    <div className="flex flex-col bg-[#0A0A0A]" style={{ height: 'calc(100dvh - 128px - 64px)' }}>
 
       {/* ── Thread Header ── */}
-      <div className="flex-shrink-0 bg-[#0A0A0A] border-b border-[#1C1C1E] px-5 pt-14 pb-4">
+      <div className="flex-shrink-0 bg-[#0A0A0A] border-b border-[#1C1C1E]">
+        <div className="max-w-[390px] mx-auto px-4 py-3">
         <div className="flex items-center gap-3">
           {/* Avatar */}
           <div className="relative">
@@ -264,10 +265,12 @@ export default function ClientMessages() {
             </span>
           </div>
         </div>
+        </div>
       </div>
 
       {/* ── Message Thread ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 overflow-y-auto py-4 space-y-3">
+        <div className="max-w-[390px] mx-auto px-4 space-y-3">
 
         {/* Empty state */}
         {messages.length === 0 && (
@@ -328,10 +331,12 @@ export default function ClientMessages() {
         })}
 
         <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* ── Message Input ── */}
-      <div className="flex-shrink-0 bg-[#0A0A0A] border-t border-[#1C1C1E] px-4 py-3 pb-[calc(0.75rem+88px)]">
+      <div className="flex-shrink-0 bg-[#0A0A0A] border-t border-[#1C1C1E]">
+        <div className="max-w-[390px] mx-auto px-4 py-3">
         <div className="flex items-end gap-3">
           <textarea
             ref={inputRef}
@@ -359,6 +364,7 @@ export default function ClientMessages() {
               />
             </svg>
           </button>
+        </div>
         </div>
       </div>
 
