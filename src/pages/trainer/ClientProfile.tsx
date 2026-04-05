@@ -1011,6 +1011,7 @@ function ProgramTab({
   }
 
   async function assignProgram(program: LibraryProgram) {
+    if (assigning) return // Prevent double-click
     setAssigning(program.id)
     setAssignError('')
     try {

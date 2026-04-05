@@ -401,7 +401,7 @@ export default function ProgramBuilder() {
           // Deactivate any existing active assignment for this client
           await supabase
             .from('client_cycle_assignments')
-            .update({ is_active: false, status: 'completed' })
+            .update({ is_active: false })
             .eq('client_id', form.assignToClientId)
             .eq('is_active', true)
 
