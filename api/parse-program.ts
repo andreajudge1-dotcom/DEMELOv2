@@ -1,0 +1,95 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  const { documentText, documentName } = req.body ?? {}
+  if (!documentText) {
+    return res.status(400).json({ error: 'Missing documentText' })
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' })
+  }
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        system: 'You are a fitness program parser. Extract the complete training program structure from this document and return only valid JSON with no other text, markdown, or explanation.',
+        messages: [
+          {
+            role: 'user',
+            content: `Parse this training document "${documentName}" and return a JSON object with this exact structure:
+
+{
+  "program_name": "string",
+  "weeks": number,
+  "days": [
+    {
+      "day_number": number,
+      "day_name": "string",
+      "focus": "string describing the training focus such as Lower Glute or Shoulders Arms",
+      "exercises": [
+        {
+          "name": "string",
+          "superset_with": "string or null",
+          "coaching_notes": "string with any notes from the document",
+          "sets": [
+            {
+              "set_number": number,
+              "reps_min": number,
+              "reps_max": number,
+              "set_type": "working | drop | amrap | bodyweight",
+              "special_instructions": "string or null for any special techniques like drop sets holds or pulses"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+Here is the document text:
+
+${documentText}`,
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      const errBody = await response.text()
+      console.error('Claude API error:', response.status, errBody)
+      return res.status(502).json({ error: `Claude API error: ${response.status}` })
+    }
+
+    const data = await response.json()
+    const text = data.content?.[0]?.text ?? ''
+
+    // Try to parse JSON from response
+    let parsed
+    try {
+      // Handle potential markdown code blocks
+      const jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      parsed = JSON.parse(jsonStr)
+    } catch {
+      return res.status(422).json({ error: 'Failed to parse AI response as JSON', raw: text })
+    }
+
+    return res.status(200).json(parsed)
+  } catch (err: any) {
+    console.error('Parse program error:', err)
+    return res.status(500).json({ error: err.message ?? 'Internal server error' })
+  }
+}

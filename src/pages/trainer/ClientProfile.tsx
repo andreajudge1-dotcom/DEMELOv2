@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { parseTrainingDocument } from '../../utils/programParser'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -2117,11 +2118,14 @@ function fmtSize(bytes: number | null): string {
 }
 
 function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string }) {
+  const navigate = useNavigate()
   const [docs, setDocs] = useState<VaultDoc[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [parsingDocId, setParsingDocId] = useState<string | null>(null)
+  const [parseError, setParseError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { loadDocs() }, [])
@@ -2278,14 +2282,30 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
 
                 {/* Convert banner for PDF/DOCX */}
                 {isProgramFile && (
-                  <div className="mt-3 bg-[#C9A84C]/5 border border-[#C9A84C]/20 rounded-lg px-3 py-2 flex items-center justify-between">
-                    <p className="font-barlow text-xs text-[#C9A84C]/70">This looks like a training program.</p>
-                    <button
-                      onClick={() => alert('AI program import coming soon.')}
-                      className="font-barlow text-xs text-[#C9A84C] font-semibold hover:text-[#E2C070] transition-colors"
-                    >
-                      Convert to Program
-                    </button>
+                  <div className="mt-3 bg-[#C9A84C]/5 border border-[#C9A84C]/20 rounded-lg px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <p className="font-barlow text-xs text-[#C9A84C]/70">This looks like a training program.</p>
+                      <button
+                        onClick={async () => {
+                          setParsingDocId(doc.id)
+                          setParseError(null)
+                          const result = await parseTrainingDocument(doc.file_url, doc.name)
+                          setParsingDocId(null)
+                          if (result.success) {
+                            navigate('/trainer/programs/new', { state: { parsedProgram: result.data, clientId } })
+                          } else {
+                            setParseError(result.error)
+                          }
+                        }}
+                        disabled={parsingDocId === doc.id}
+                        className="font-barlow text-xs text-[#C9A84C] font-semibold hover:text-[#E2C070] transition-colors disabled:opacity-50"
+                      >
+                        {parsingDocId === doc.id ? 'Parsing document...' : 'Convert to Program'}
+                      </button>
+                    </div>
+                    {parseError && parsingDocId === null && (
+                      <p className="font-barlow text-xs text-red-400 mt-1">{parseError}</p>
+                    )}
                   </div>
                 )}
               </div>
