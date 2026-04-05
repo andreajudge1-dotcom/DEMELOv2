@@ -262,7 +262,6 @@ export default function ClientHome() {
   const firstName = client?.full_name?.split(' ')[0] ?? 'there'
   const trainerName = trainer?.full_name ?? 'Your coach'
   const trainerFirstName = trainerName.split(' ')[0]
-  const trainerInitial = trainerName.charAt(0).toUpperCase()
   const numDays = (program?.training_cycles as any)?.num_days ?? 4
   const numWeeks = (program?.training_cycles as any)?.num_weeks ?? 4
   const programName = (program?.training_cycles as any)?.name ?? ''
@@ -367,17 +366,9 @@ export default function ClientHome() {
       <div className="min-h-screen bg-[#0A0A0A] pb-24">
         <div className="max-w-[390px] mx-auto px-4 pt-12">
           {/* Header */}
-          <div className="flex items-start justify-between mb-5">
-            <div>
-              <p className="font-barlow text-white/40 text-sm">{getGreeting()},</p>
-              <h1 className="font-bebas text-5xl text-white tracking-wide leading-tight">{firstName}.</h1>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 flex items-center justify-center">
-                <span className="font-bebas text-sm text-[#C9A84C]">{trainerInitial}</span>
-              </div>
-              <span className="font-barlow text-xs text-white/40">{trainerFirstName}</span>
-            </div>
+          <div className="mb-5">
+            <p className="font-barlow text-white/40 text-sm">{getGreeting()},</p>
+            <h1 className="font-bebas text-5xl text-white tracking-wide leading-tight">{firstName}.</h1>
           </div>
 
           {/* Program pill */}
@@ -423,17 +414,9 @@ export default function ClientHome() {
       <div className="max-w-[390px] mx-auto px-4 pt-12">
 
         {/* ── Header ── */}
-        <div className="flex items-start justify-between mb-5">
-          <div>
-            <p className="font-barlow text-white/40 text-sm">{getGreeting()},</p>
-            <h1 className="font-bebas text-5xl text-white tracking-wide leading-tight">{firstName}.</h1>
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 flex items-center justify-center">
-              <span className="font-bebas text-sm text-[#C9A84C]">{trainerInitial}</span>
-            </div>
-            <span className="font-barlow text-xs text-white/40">{trainerFirstName}</span>
-          </div>
+        <div className="mb-5">
+          <p className="font-barlow text-white/40 text-sm">{getGreeting()},</p>
+          <h1 className="font-bebas text-5xl text-white tracking-wide leading-tight">{firstName}.</h1>
         </div>
 
         {/* Program pill — tappable */}
