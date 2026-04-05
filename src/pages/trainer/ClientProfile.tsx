@@ -1699,9 +1699,6 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
           }
         }
 
-        // Red flags: scores <= 2
-        const flags = scoreItems.filter(s => s.val !== null && s.val <= 2)
-
         const allPhotos = [
           { label: 'Front', url: ci.photo_front_url },
           { label: 'Side L', url: ci.photo_side_left_url },
@@ -1731,19 +1728,8 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
                 </div>
               </div>
 
-              {/* Right: overall score + trend + flags */}
+              {/* Right: overall score + trend */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                {/* Red flags */}
-                {flags.length > 0 && (
-                  <div className="flex gap-1">
-                    {flags.map(f => (
-                      <span key={f.abbr} className="font-barlow text-[9px] font-semibold bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">
-                        {f.abbr}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
                 {/* Trend arrow */}
                 <div className="w-4 flex items-center justify-center">
                   {trendArrow === 'up' && <span className="text-green-400 text-sm">↑</span>}
