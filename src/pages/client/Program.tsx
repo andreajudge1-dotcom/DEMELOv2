@@ -83,7 +83,6 @@ export default function ClientProgram() {
   const [cycleId, setCycleId] = useState('')
   const [programInfo, setProgramInfo] = useState<ProgramInfo | null>(null)
   const [suggestedWeek, setSuggestedWeek] = useState(1)
-  const [viewWeek, setViewWeek] = useState(1)
   const [workouts, setWorkouts] = useState<Workout[]>([])
   const [selectedDayIdx, setSelectedDayIdx] = useState(0)
   const [exerciseCache, setExerciseCache] = useState<Record<string, ExerciseDetail[]>>({})
@@ -125,7 +124,6 @@ export default function ClientProgram() {
 
     const week = Math.ceil(assignRow.next_day_number / numDays)
     setSuggestedWeek(week)
-    setViewWeek(week)
 
     const { data: workoutRows } = await supabase
       .from('workouts')
@@ -280,26 +278,6 @@ export default function ClientProgram() {
           )}
         </div>
 
-        {/* ── Week Selector ── */}
-        <div className="flex items-center justify-center gap-4 mb-4">
-          <button
-            onClick={() => setViewWeek(Math.max(1, viewWeek - 1))}
-            disabled={viewWeek <= 1}
-            className="w-8 h-8 rounded-full bg-[#1C1C1E] border border-[#2C2C2E] flex items-center justify-center text-white/40 hover:text-white disabled:opacity-20 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-          </button>
-          <span className={`font-bebas text-lg tracking-wide min-w-[80px] text-center ${viewWeek === suggestedWeek ? 'text-[#C9A84C]' : 'text-white/60'}`}>
-            Week {viewWeek}
-          </span>
-          <button
-            onClick={() => setViewWeek(Math.min(programInfo.num_weeks, viewWeek + 1))}
-            disabled={viewWeek >= programInfo.num_weeks}
-            className="w-8 h-8 rounded-full bg-[#1C1C1E] border border-[#2C2C2E] flex items-center justify-center text-white/40 hover:text-white disabled:opacity-20 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-          </button>
-        </div>
 
         {/* ── Day Tabs ── */}
         <div className="flex gap-1.5 mb-5 overflow-x-auto scrollbar-hide pb-1">
