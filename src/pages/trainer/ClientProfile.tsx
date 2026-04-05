@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -753,7 +753,7 @@ export default function ClientProfile() {
             <StubTab title="Messages" desc="Direct messaging between you and this client. Coming soon." />
           )}
           {activeTab === 'Vault' && (
-            <StubTab title="Vault" desc="Documents, contracts, and resources shared with this client. Coming soon." />
+            <VaultTab clientId={clientId!} trainerId={profile?.id ?? ''} />
           )}
         </div>
 
@@ -2083,6 +2083,216 @@ function MetricsTab({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vault Tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface VaultDoc {
+  id: string
+  name: string
+  file_url: string
+  file_type: string | null
+  file_size: number | null
+  is_shared: boolean
+  created_at: string
+}
+
+function fileIcon(ext: string | null) {
+  const e = (ext ?? '').toLowerCase()
+  if (e === 'pdf') return { color: 'text-red-400 bg-red-500/15', label: 'PDF' }
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].includes(e)) return { color: 'text-blue-400 bg-blue-500/15', label: 'IMG' }
+  if (['doc', 'docx'].includes(e)) return { color: 'text-purple-400 bg-purple-500/15', label: 'DOC' }
+  return { color: 'text-white/40 bg-white/5', label: e.toUpperCase() || 'FILE' }
+}
+
+function fmtSize(bytes: number | null): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1048576).toFixed(1)} MB`
+}
+
+function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string }) {
+  const [docs, setDocs] = useState<VaultDoc[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { loadDocs() }, [])
+
+  async function loadDocs() {
+    const { data } = await supabase
+      .from('vault_documents')
+      .select('id, name, file_url, file_type, file_size, is_shared, created_at')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+    setDocs(data ?? [])
+    setLoading(false)
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+
+    const ext = file.name.split('.').pop() ?? ''
+    const ts = Date.now()
+    const path = `vault/${clientId}/${ts}-${file.name}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('vault')
+      .upload(path, file, { upsert: true })
+
+    if (uploadErr) {
+      console.error('Upload error:', uploadErr)
+      setUploading(false)
+      return
+    }
+
+    const { data: urlData } = supabase.storage.from('vault').getPublicUrl(path)
+
+    await supabase.from('vault_documents').insert({
+      client_id: clientId,
+      trainer_id: trainerId,
+      name: file.name,
+      file_url: urlData.publicUrl,
+      file_type: ext,
+      file_size: file.size,
+      is_shared: false,
+    })
+
+    setUploading(false)
+    if (fileRef.current) fileRef.current.value = ''
+    await loadDocs()
+  }
+
+  async function toggleShare(doc: VaultDoc) {
+    await supabase.from('vault_documents').update({ is_shared: !doc.is_shared }).eq('id', doc.id)
+    setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, is_shared: !d.is_shared } : d))
+  }
+
+  async function confirmDelete() {
+    if (!deleteId) return
+    setDeleting(true)
+    await supabase.from('vault_documents').delete().eq('id', deleteId)
+    setDeleteId(null)
+    setDeleting(false)
+    await loadDocs()
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-6 h-6 border-2 border-[#C9A84C]/30 border-t-[#C9A84C] rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <input ref={fileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,.heic,.txt,.csv,.xlsx" onChange={handleUpload} />
+
+      {/* Delete confirmation */}
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-6">
+            <p className="font-bebas text-xl text-white tracking-wide mb-2">Delete Document?</p>
+            <p className="font-barlow text-sm text-white/50 mb-5">This cannot be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteId(null)} disabled={deleting} className="flex-1 font-barlow text-sm text-white/40 border border-[#2C2C2E] rounded-xl py-2.5 hover:text-white transition-colors">Cancel</button>
+              <button onClick={confirmDelete} disabled={deleting} className="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-bebas text-sm tracking-widest py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Documents</p>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-4 py-2 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+        >
+          {uploading ? 'Uploading...' : 'Upload Document'}
+        </button>
+      </div>
+
+      {/* Document list */}
+      {docs.length === 0 ? (
+        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-12 text-center">
+          <p className="font-barlow text-sm text-white/25">No documents yet. Upload files to share with this client.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {docs.map(doc => {
+            const icon = fileIcon(doc.file_type)
+            const isProgramFile = ['pdf', 'doc', 'docx'].includes((doc.file_type ?? '').toLowerCase())
+            return (
+              <div key={doc.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4">
+                <div className="flex items-center gap-3">
+                  {/* File icon */}
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${icon.color}`}>
+                    <span className="font-bebas text-xs">{icon.label}</span>
+                  </div>
+
+                  {/* Name + meta */}
+                  <div className="flex-1 min-w-0">
+                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="font-barlow text-sm font-semibold text-white hover:text-[#C9A84C] transition-colors truncate block">
+                      {doc.name}
+                    </a>
+                    <p className="font-barlow text-xs text-white/30 mt-0.5">
+                      {new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {doc.file_size ? ` · ${fmtSize(doc.file_size)}` : ''}
+                    </p>
+                  </div>
+
+                  {/* Share toggle */}
+                  <button
+                    onClick={() => toggleShare(doc)}
+                    className={`font-barlow text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      doc.is_shared
+                        ? 'bg-green-500/15 text-green-400 border-green-500/30'
+                        : 'bg-transparent text-white/30 border-[#3A3A3C] hover:text-white/60'
+                    }`}
+                  >
+                    {doc.is_shared ? 'Shared' : 'Share'}
+                  </button>
+
+                  {/* Delete */}
+                  <button
+                    onClick={() => setDeleteId(doc.id)}
+                    className="font-barlow text-xs text-red-400/40 hover:text-red-400 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+
+                {/* Convert banner for PDF/DOCX */}
+                {isProgramFile && (
+                  <div className="mt-3 bg-[#C9A84C]/5 border border-[#C9A84C]/20 rounded-lg px-3 py-2 flex items-center justify-between">
+                    <p className="font-barlow text-xs text-[#C9A84C]/70">This looks like a training program.</p>
+                    <button
+                      onClick={() => alert('AI program import coming soon.')}
+                      className="font-barlow text-xs text-[#C9A84C] font-semibold hover:text-[#E2C070] transition-colors"
+                    >
+                      Convert to Program
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
