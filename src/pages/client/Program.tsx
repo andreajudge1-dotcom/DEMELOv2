@@ -48,10 +48,10 @@ export default function Program() {
       .eq('client_id', clientRow.id)
       .eq('is_active', true)
       .maybeSingle()
-    if (!assignRow) { setLoading(false); return }
+    if (!assignRow || !(assignRow.training_cycles as any)?.name) { setLoading(false); return }
 
     const tc = assignRow.training_cycles as any
-    setProgramInfo({ name: tc.name, num_days: tc.num_days, num_weeks: tc.num_weeks })
+    setProgramInfo({ name: tc.name, num_days: tc?.num_days ?? 4, num_weeks: tc?.num_weeks ?? 4 })
     setCurrentWeek(Math.ceil(assignRow.next_day_number / (tc.num_days ?? 4)))
 
     const { data: workoutRows } = await supabase

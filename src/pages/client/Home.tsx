@@ -134,10 +134,10 @@ export default function ClientHome() {
       .eq('is_active', true)
       .maybeSingle()
 
-    if (!assignRow) { setLoading(false); return }
+    if (!assignRow || !(assignRow.training_cycles as any)?.name) { setLoading(false); return }
     setProgram(assignRow as unknown as ProgramData)
 
-    const numDays = (assignRow.training_cycles as any).num_days ?? 4
+    const numDays = (assignRow.training_cycles as any)?.num_days ?? 4
     const week = Math.ceil(assignRow.next_day_number / numDays)
     setCurrentWeek(week)
 
