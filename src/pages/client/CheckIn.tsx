@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { useUnsavedWarning } from '../../hooks/useUnsavedWarning'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -217,6 +218,8 @@ export default function CheckIn() {
   const thisMondayStr = toDateStr(thisMonday)
   const weekRange = getWeekRange(thisMonday)
   const allFilled = !!(sleep && nutrition && fatigue && soreness && performance)
+  const hasUnsavedWork = !!(sleep || nutrition || fatigue || soreness || performance || bodyWeight || notes)
+  useUnsavedWarning(hasUnsavedWork && showForm)
 
   useEffect(() => {
     if (profile?.id) loadAll(profile.id)

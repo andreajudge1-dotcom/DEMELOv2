@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import ExercisePicker from '../../components/ExercisePicker'
+import { useUnsavedWarning } from '../../hooks/useUnsavedWarning'
 import SetPrescriptionEditor from '../../components/SetPrescriptionEditor'
 import type { SetPrescription } from '../../components/SetPrescriptionEditor'
 import Select from '../../components/Select'
@@ -84,6 +85,8 @@ export default function ProgramBuilder() {
   // Builder state
   const [days, setDays] = useState<WorkoutDay[]>([])
   const [activeDayIndex, setActiveDayIndex] = useState(0)
+
+  useUnsavedWarning(step === 'builder' && days.length > 0)
 
   // Exercise picker
   const [showPicker, setShowPicker] = useState(false)

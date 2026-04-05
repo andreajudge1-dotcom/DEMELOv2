@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import ExercisePicker from '../../components/ExercisePicker'
 import SessionSummary from '../../components/SessionSummary'
+import { useUnsavedWarning } from '../../hooks/useUnsavedWarning'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -112,6 +113,8 @@ export default function ClientSession() {
   // Session timer
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const startedAtRef = useRef<string>('')
+
+  useUnsavedWarning(!completed && exercises.length > 0)
 
   const loadSession = useCallback(async () => {
     if (!sessionId) return
