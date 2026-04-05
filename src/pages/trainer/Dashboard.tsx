@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { supabase } from '../../lib/supabase'
@@ -33,60 +33,80 @@ export default function Dashboard() {
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([])
   const [pendingCheckIns, setPendingCheckIns] = useState<PendingCheckIn[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(false)
+  const didFetch = useRef(false)
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    if (profile?.id && !didFetch.current) {
+      didFetch.current = true
+      fetchDashboardData()
+    }
+  }, [profile?.id])
+
+  // Timeout — force render after 5s
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoading(false)
+        setFetchError(true)
+      }
+    }, 5000)
+    return () => clearTimeout(timer)
+  }, [loading])
 
   async function fetchDashboardData() {
-    const { data: trainerData } = await supabase
-      .from('trainers')
-      .select('id')
-      .eq('id', profile?.id)
-      .single()
+    try {
+      const trainerId = profile?.id
+      if (!trainerId) { setLoading(false); return }
 
-    if (!trainerData) return
-
-    const { data: clientsData } = await supabase
-      .from('clients')
-      .select('id, full_name, status, email')
-      .eq('trainer_id', trainerData.id)
-      .order('created_at', { ascending: false })
-
-    const { data: sessionsData } = await supabase
-      .from('sessions')
-      .select('id, started_at, status, clients(full_name), workouts(name)')
-      .in('client_id', (clientsData ?? []).map(c => c.id))
-      .order('started_at', { ascending: false })
-      .limit(5)
-
-    // Pending check-ins this week (no coach_response)
-    const monday = new Date()
-    const day = monday.getDay()
-    monday.setDate(monday.getDate() - (day === 0 ? 6 : day - 1))
-    monday.setHours(0, 0, 0, 0)
-    const mondayStr = monday.toISOString().split('T')[0]
-
-    const clientIds = (clientsData ?? []).map(c => c.id)
-    const clientMap = new Map((clientsData ?? []).map(c => [c.id, c.full_name]))
-
-    if (clientIds.length > 0) {
-      const { data: ciData } = await supabase
-        .from('check_ins')
-        .select('id, week_start, created_at, client_id')
-        .in('client_id', clientIds)
-        .gte('week_start', mondayStr)
-        .is('coach_response', null)
+      const { data: clientsData } = await supabase
+        .from('clients')
+        .select('id, full_name, status, email')
+        .eq('trainer_id', trainerId)
         .order('created_at', { ascending: false })
-      setPendingCheckIns((ciData ?? []).map(ci => ({
-        ...ci,
-        client_name: clientMap.get(ci.client_id) ?? 'Client',
-      })))
-    }
 
-    setClients(clientsData ?? [])
-    setRecentSessions(sessionsData ?? [])
-    setLoading(false)
+      setClients(clientsData ?? [])
+
+      const clientIds = (clientsData ?? []).map(c => c.id)
+
+      if (clientIds.length > 0) {
+        const { data: sessionsData } = await supabase
+          .from('sessions')
+          .select('id, started_at, status, clients(full_name), workouts(name)')
+          .in('client_id', clientIds)
+          .order('started_at', { ascending: false })
+          .limit(5)
+        setRecentSessions(sessionsData ?? [])
+
+        // Pending check-ins this week
+        const monday = new Date()
+        const day = monday.getDay()
+        monday.setDate(monday.getDate() - (day === 0 ? 6 : day - 1))
+        monday.setHours(0, 0, 0, 0)
+        const mondayStr = monday.toISOString().split('T')[0]
+
+        const clientMap = new Map((clientsData ?? []).map(c => [c.id, c.full_name]))
+
+        const { data: ciData } = await supabase
+          .from('check_ins')
+          .select('id, week_start, created_at, client_id')
+          .in('client_id', clientIds)
+          .gte('week_start', mondayStr)
+          .is('coach_response', null)
+          .order('created_at', { ascending: false })
+
+        setPendingCheckIns((ciData ?? []).map(ci => ({
+          ...ci,
+          client_name: clientMap.get(ci.client_id) ?? 'Client',
+        })))
+      }
+
+      setLoading(false)
+    } catch (err) {
+      console.error('Dashboard fetch error:', err)
+      setLoading(false)
+      setFetchError(true)
+    }
   }
 
   const activeClients = clients.filter(c => c.status === 'active')
@@ -94,7 +114,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="font-barlow text-white/40">Loading...</p>
+        <div className="w-8 h-8 border-2 border-[#C9A84C]/30 border-t-[#C9A84C] rounded-full animate-spin" />
       </div>
     )
   }
@@ -111,6 +131,14 @@ export default function Dashboard() {
           opacity: 0.04,
         }}
       />
+
+      {/* Error note */}
+      {fetchError && (
+        <div className="mb-4 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2">
+          <p className="font-barlow text-xs text-red-400">Some data may not have loaded. Try refreshing.</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8">
         <h1 className="font-bebas text-4xl text-white tracking-wide">
