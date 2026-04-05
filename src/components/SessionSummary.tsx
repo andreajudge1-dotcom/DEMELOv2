@@ -63,19 +63,19 @@ export default function SessionSummary({
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4 text-center">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4 text-center">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-1">Duration</p>
           <p className="font-bebas text-2xl text-white">{formatDuration(durationMin)}</p>
         </div>
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4 text-center">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4 text-center">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-1">Sets Logged</p>
           <p className="font-bebas text-2xl text-white">{totalSets}</p>
         </div>
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4 text-center">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4 text-center">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-1">Total Tonnage</p>
           <p className="font-bebas text-2xl text-white">{totalTonnage.toLocaleString()} <span className="text-base text-white/40">lbs</span></p>
         </div>
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4 text-center">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4 text-center">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-1">Avg RPE</p>
           <p className="font-bebas text-2xl text-white">
             {averageRpe ?? '—'}
@@ -104,7 +104,7 @@ export default function SessionSummary({
       )}
 
       {/* Note input */}
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4 mb-6">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4 mb-6">
         <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">
           {role === 'client' ? 'Note for Josh' : 'Coach Notes'}
         </p>

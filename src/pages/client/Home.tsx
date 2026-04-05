@@ -303,7 +303,7 @@ export default function ClientHome() {
           <div className="w-full flex flex-col gap-3 mb-12">
             <button
               onClick={() => navigate('/client/checkin')}
-              className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
+              className="w-full bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
             >
               <div className="w-10 h-10 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -318,7 +318,7 @@ export default function ClientHome() {
 
             <button
               onClick={() => navigate('/client/messages')}
-              className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
+              className="w-full bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
             >
               <div className="w-10 h-10 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -333,7 +333,7 @@ export default function ClientHome() {
 
             <button
               onClick={() => navigate('/client/vault')}
-              className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
+              className="w-full bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
             >
               <div className="w-10 h-10 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center flex-shrink-0">
                 <svg className="w-5 h-5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -372,7 +372,7 @@ export default function ClientHome() {
           </div>
 
           {/* Program pill */}
-          <div className="mb-5 inline-flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
+          <div className="mb-5 inline-flex items-center gap-2 bg-[#C9A84C]/10 backdrop-blur-sm border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-[#C9A84C]" />
             <span className="font-barlow text-xs text-[#C9A84C]">
               {programName} · Week {currentWeek} of {numWeeks}
@@ -383,7 +383,7 @@ export default function ClientHome() {
           {hasCheckedInThisWeek === false && (
             <button
               onClick={() => navigate('/client/checkin')}
-              className="w-full mb-4 flex items-center gap-3 bg-[#1C1C1E] border border-[#2C2C2E] border-l-[#C9A84C] border-l-4 rounded-2xl px-4 py-4 text-left"
+              className="w-full mb-4 flex items-center gap-3 bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] border-l-[#C9A84C] border-l-4 rounded-2xl px-4 py-4 text-left"
             >
               <div className="flex-1">
                 <p className="font-barlow text-sm font-semibold text-[#C9A84C]">Your weekly check-in is due.</p>
@@ -394,7 +394,7 @@ export default function ClientHome() {
           )}
 
           {/* Rest Day card */}
-          <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-5 mb-4">
+          <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-5 mb-4">
             <h2 className="font-bebas text-4xl text-white tracking-wide leading-tight mb-3">Rest Day</h2>
             <p className="font-barlow text-sm text-white/30">
               Recovery is part of the program. Rest up — you have earned it.
@@ -421,7 +421,7 @@ export default function ClientHome() {
 
         {/* Program pill — tappable */}
         <div className="mb-5 flex items-center gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
+          <div className="inline-flex items-center gap-2 bg-[#C9A84C]/10 backdrop-blur-sm border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-[#C9A84C]" />
             <span className="font-barlow text-xs text-[#C9A84C]">
               {programName} · Week {currentWeek} of {numWeeks}
@@ -440,7 +440,7 @@ export default function ClientHome() {
         {hasCheckedInThisWeek === false && (
           <button
             onClick={() => navigate('/client/checkin')}
-            className="w-full mb-4 flex items-center gap-3 bg-[#1C1C1E] border border-[#2C2C2E] border-l-[#C9A84C] border-l-4 rounded-2xl px-4 py-4 text-left"
+            className="w-full mb-4 flex items-center gap-3 bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] border-l-[#C9A84C] border-l-4 rounded-2xl px-4 py-4 text-left"
           >
             <div className="flex-1">
               <p className="font-barlow text-sm font-semibold text-[#C9A84C]">Your weekly check-in is due.</p>
@@ -451,7 +451,7 @@ export default function ClientHome() {
         )}
 
         {/* ── Today card ── */}
-        <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-5 mb-2">
+        <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-5 mb-2">
           {/* Top row */}
           <div className="flex items-start justify-between mb-3">
             <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">
@@ -509,7 +509,7 @@ export default function ClientHome() {
               <button
                 onClick={() => startSession()}
                 disabled={startingSession}
-                className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-colors min-h-[56px] disabled:opacity-50"
+                className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-all min-h-[56px] disabled:opacity-50 shadow-[0_0_20px_rgba(201,168,76,0.25)]"
               >
                 {startingSession ? 'STARTING...' : 'START SESSION'}
               </button>
@@ -521,7 +521,7 @@ export default function ClientHome() {
         {!todayCompleted && suggestedWorkout && (
           <button
             onClick={() => setShowDayPicker(true)}
-            className="w-full mb-4 bg-[#1C1C1E] border border-[#C9A84C]/40 rounded-xl font-barlow text-sm text-[#C9A84C] hover:bg-[#C9A84C]/10 transition-colors min-h-[44px]"
+            className="w-full mb-4 bg-white/[0.03] backdrop-blur-sm border border-[#C9A84C]/30 rounded-xl font-barlow text-sm text-[#C9A84C] hover:bg-[#C9A84C]/10 transition-colors min-h-[44px]"
           >
             Choose a Different Day
           </button>
@@ -530,7 +530,7 @@ export default function ClientHome() {
         {/* ── Extra workout ── */}
         <button
           onClick={() => { setShowExtraSheet(true); setExtraType(null) }}
-          className="w-full mt-3 border border-[#2C2C2E] rounded-2xl py-4 font-barlow text-sm text-white/30 hover:text-white/60 hover:border-[#3A3A3C] transition-colors min-h-[56px]"
+          className="w-full mt-3 border border-white/[0.06] rounded-2xl py-4 font-barlow text-sm text-white/30 hover:text-white/60 hover:border-white/[0.12] transition-colors min-h-[56px]"
         >
           + Log extra workout
         </button>
@@ -539,7 +539,7 @@ export default function ClientHome() {
       {/* ── Day picker bottom sheet ── */}
       {showDayPicker && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center" onClick={() => setShowDayPicker(false)}>
-          <div className="bg-[#1C1C1E] rounded-t-2xl border-t border-[#2C2C2E] w-full max-w-[500px] flex flex-col" style={{ maxHeight: '75vh' }} onClick={e => e.stopPropagation()}>
+          <div className="bg-[#1C1C1E]/95 backdrop-blur-xl rounded-t-2xl border-t border-white/[0.08] w-full max-w-[500px] flex flex-col" style={{ maxHeight: '75vh' }} onClick={e => e.stopPropagation()}>
             {/* Fixed header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#2C2C2E] flex-shrink-0">
               <h2 className="font-bebas text-xl text-white tracking-wide">Choose a Day</h2>
@@ -613,7 +613,7 @@ export default function ClientHome() {
       {/* ── Extra workout bottom sheet ── */}
       {showExtraSheet && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center">
-          <div className="bg-[#1C1C1E] rounded-t-2xl border-t border-[#2C2C2E] w-full max-w-[500px] flex flex-col">
+          <div className="bg-[#1C1C1E]/95 backdrop-blur-xl rounded-t-2xl border-t border-white/[0.08] w-full max-w-[500px] flex flex-col">
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#2C2C2E]">
               <h2 className="font-bebas text-lg text-white tracking-wide">Log Extra Workout</h2>
               <button onClick={() => { setShowExtraSheet(false); setExtraType(null) }} className="text-white/40 hover:text-white text-lg">×</button>

@@ -403,7 +403,7 @@ export default function ClientProfile() {
   return (
     <div className="max-w-5xl">
       {/* ── Header ── */}
-      <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-6 mb-6">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-6 mb-6">
         <div className="flex items-start gap-5 flex-wrap">
           {/* Back + avatar */}
           <div className="flex items-center gap-4">
@@ -503,7 +503,7 @@ export default function ClientProfile() {
       {/* ── Delete Confirmation Modal ── */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-6">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-sm p-6">
             <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
               <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -536,10 +536,10 @@ export default function ClientProfile() {
       {/* ── Start Session 2-Step Modal ── */}
       {showStartSession && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-md flex flex-col max-h-[85vh]">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-md flex flex-col max-h-[85vh]">
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#2C2C2E]">
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
               <div>
                 <h2 className="font-bebas text-xl text-white tracking-wide">
                   {sessionModalStep === 1 ? 'Which day are you doing today?' : 'Confirm Session'}
@@ -613,7 +613,7 @@ export default function ClientProfile() {
                 </div>
 
                 {/* Step 1 footer */}
-                <div className="p-4 border-t border-[#2C2C2E]">
+                <div className="p-4 border-t border-white/[0.06]">
                   <button
                     onClick={() => { if (selectedDay) setSessionModalStep(2) }}
                     disabled={!selectedDay}
@@ -666,7 +666,7 @@ export default function ClientProfile() {
                 </div>
 
                 {/* Step 2 footer */}
-                <div className="p-4 border-t border-[#2C2C2E] flex gap-3">
+                <div className="p-4 border-t border-white/[0.06] flex gap-3">
                   <button
                     onClick={() => setSessionModalStep(1)}
                     disabled={startingSession}
@@ -689,7 +689,7 @@ export default function ClientProfile() {
       )}
 
       {/* ── Tabs ── */}
-      <div className="flex gap-0 mb-6 border-b border-[#2C2C2E] overflow-x-auto">
+      <div className="flex gap-0 mb-6 border-b border-white/[0.06] overflow-x-auto">
         {TABS.map(tab => (
           <button
             key={tab}
@@ -760,7 +760,7 @@ export default function ClientProfile() {
 
         {/* Sticky notes sidebar */}
         <div className="w-52 flex-shrink-0 hidden lg:block">
-          <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4 sticky top-4">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4 sticky top-4">
             <p className="font-barlow text-xs text-[#C9A84C] font-semibold uppercase tracking-wider mb-2">
               Coach Notes
             </p>
@@ -815,7 +815,7 @@ function OverviewTab({
     <div className="flex flex-col gap-4">
       {/* Current program card */}
       {assignment ? (
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-1">Current Program</p>
           <p className="font-bebas text-2xl text-white tracking-wide">{assignment.training_cycles.name}</p>
           <div className="flex items-center gap-3 mt-2">
@@ -843,7 +843,7 @@ function OverviewTab({
           })()}
         </div>
       ) : (
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5 text-center">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5 text-center">
           <p className="font-barlow text-sm text-white/30 italic">No active program assigned</p>
         </div>
       )}
@@ -851,7 +851,7 @@ function OverviewTab({
       <div className="grid grid-cols-2 gap-4">
         {/* This week's days */}
         {assignment && workoutDays.length > 0 && (
-          <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
             <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">This Week</p>
             <div className="flex flex-col gap-2">
               {workoutDays.map(day => {
@@ -874,7 +874,7 @@ function OverviewTab({
 
         {/* Latest check-in */}
         {latestCheckIn && (
-          <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
             <div className="flex items-center justify-between mb-3">
               <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Latest Check-in</p>
               <p className="font-barlow text-xs text-white/30">{fmtDate(latestCheckIn.week_start)}</p>
@@ -899,9 +899,9 @@ function OverviewTab({
 
       {/* Recent sessions */}
       {recentSessions.length > 0 && (
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Recent Sessions</p>
-          <div className="flex flex-col divide-y divide-[#2C2C2E]">
+          <div className="flex flex-col divide-y divide-white/[0.06]">
             {recentSessions.map(s => (
               <div key={s.id} className="py-2.5 flex items-center gap-3">
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.completed_at ? 'bg-green-400' : 'bg-white/20'}`} />
@@ -1130,10 +1130,10 @@ function ProgramTab({
   // ── Assign-from-Library modal (shared by empty + active states) ──
   const assignModal = showAssignModal && (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-lg max-h-[85vh] flex flex-col">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-lg max-h-[85vh] flex flex-col">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#2C2C2E]">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
           <h2 className="font-bebas text-xl text-white tracking-wide">Assign Program from Library</h2>
           <button
             onClick={() => setShowAssignModal(false)}
@@ -1150,7 +1150,7 @@ function ProgramTab({
 
         {/* Search + tag filters */}
         {!loadingLibrary && libraryPrograms.length > 0 && (
-          <div className="px-4 pt-3 pb-2 flex flex-col gap-2 border-b border-[#2C2C2E]">
+          <div className="px-4 pt-3 pb-2 flex flex-col gap-2 border-b border-white/[0.06]">
             <input
               type="text"
               value={search}
@@ -1231,7 +1231,7 @@ function ProgramTab({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-[#2C2C2E]">
+        <div className="p-4 border-t border-white/[0.06]">
           <button
             onClick={() => {
               setShowAssignModal(false)
@@ -1253,7 +1253,7 @@ function ProgramTab({
         {assignModal}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Card 1 — Assign from Library */}
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-6 flex flex-col items-center text-center">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-6 flex flex-col items-center text-center">
             {/* Icon */}
             <div className="w-14 h-14 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center mb-4">
               <svg className="w-7 h-7 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1273,7 +1273,7 @@ function ProgramTab({
           </div>
 
           {/* Card 2 — Build New Program */}
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-6 flex flex-col items-center text-center">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-6 flex flex-col items-center text-center">
             {/* Icon */}
             <div className="w-14 h-14 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center mb-4">
               <svg className="w-7 h-7 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1296,9 +1296,9 @@ function ProgramTab({
 
         {/* Program history */}
         {programHistory.length > 0 && (
-          <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
             <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Program History</p>
-            <div className="flex flex-col divide-y divide-[#2C2C2E]">
+            <div className="flex flex-col divide-y divide-white/[0.06]">
               {programHistory.map(h => (
                 <div key={h.id} className="py-3 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
@@ -1331,7 +1331,7 @@ function ProgramTab({
       {assignModal}
 
       {/* Program details card */}
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
         <div className="flex items-center justify-between mb-1">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Active Program</p>
           <span className="font-barlow text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-400">Active</span>
@@ -1409,9 +1409,9 @@ function ProgramTab({
 
       {/* Program history */}
       {programHistory.length > 1 && (
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Program History</p>
-          <div className="flex flex-col divide-y divide-[#2C2C2E]">
+          <div className="flex flex-col divide-y divide-white/[0.06]">
             {programHistory.map(h => (
               <div key={h.id} className="py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
@@ -1483,7 +1483,7 @@ function SessionsTab({
 
   if (sessions.length === 0) {
     return (
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-16 text-center">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-16 text-center">
         <p className="font-bebas text-xl text-white/20 tracking-wide">No Sessions Yet</p>
         <p className="font-barlow text-sm text-white/30 mt-1">Sessions will appear here once logged.</p>
       </div>
@@ -1496,7 +1496,7 @@ function SessionsTab({
         const isOpen = expanded === s.id
         const detail = sessionDetail[s.id] ?? []
         return (
-          <div key={s.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden">
+          <div key={s.id} className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] overflow-hidden">
             {/* Row */}
             <button
               onClick={() => expandSession(s.id)}
@@ -1522,7 +1522,7 @@ function SessionsTab({
 
             {/* Expanded detail */}
             {isOpen && (
-              <div className="border-t border-[#2C2C2E] px-5 py-4 bg-[#171717]">
+              <div className="border-t border-white/[0.06] px-5 py-4 bg-[#171717]">
                 {detail.length === 0 ? (
                   <p className="font-barlow text-sm text-white/30 italic">No exercises logged in this session.</p>
                 ) : (
@@ -1557,7 +1557,7 @@ function SessionsTab({
                 )}
 
                 {/* Coach notes */}
-                <div className="mt-4 pt-4 border-t border-[#2C2C2E]">
+                <div className="mt-4 pt-4 border-t border-white/[0.06]">
                   <p className="font-barlow text-xs text-[#C9A84C] font-semibold uppercase tracking-wider mb-2">Coach Notes</p>
                   <textarea
                     value={coachNote[s.id] ?? ''}
@@ -1593,7 +1593,7 @@ function ProgressTab({ sessions }: { sessions: Session[] }) {
   return (
     <div className="flex flex-col gap-4">
       {/* Sessions over time - simple bar chart */}
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
         <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-4">Session Activity (Last 12)</p>
         {completed.length === 0 ? (
           <p className="font-barlow text-sm text-white/30 italic text-center py-4">No completed sessions yet</p>
@@ -1614,7 +1614,7 @@ function ProgressTab({ sessions }: { sessions: Session[] }) {
         )}
       </div>
 
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5 text-center">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5 text-center">
         <p className="font-bebas text-lg text-white/20 tracking-wide">Progress Charts</p>
         <p className="font-barlow text-sm text-white/30 mt-1">1RM trends, body weight, and volume charts coming soon.</p>
       </div>
@@ -1656,7 +1656,7 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
 
   if (checkIns.length === 0) {
     return (
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-16 text-center">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-16 text-center">
         <p className="font-bebas text-xl text-white/20 tracking-wide">No Check-ins Yet</p>
         <p className="font-barlow text-sm text-white/30 mt-1">Weekly check-ins will appear here once submitted by the client.</p>
       </div>
@@ -1709,7 +1709,7 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
         const photoCount = allPhotos.filter(p => p.url).length
 
         return (
-          <div key={ci.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden">
+          <div key={ci.id} className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] overflow-hidden">
             {/* ── COLLAPSED HEADER ── */}
             <button
               onClick={() => setExpanded(isOpen ? null : ci.id)}
@@ -1753,7 +1753,7 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
 
             {/* ── EXPANDED DETAIL ── */}
             {isOpen && (
-              <div className="border-t border-[#2C2C2E] px-5 py-4 bg-[#171717] flex flex-col gap-4">
+              <div className="border-t border-white/[0.06] px-5 py-4 bg-[#171717] flex flex-col gap-4">
 
                 {/* Five metric rows with score dots */}
                 <div className="flex flex-col gap-3">
@@ -1779,7 +1779,7 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
 
                 {/* Body metrics */}
                 {(ci.body_weight || ci.waist_inches || ci.hips_inches || ci.chest_inches || ci.arms_inches) && (
-                  <div className="pt-3 border-t border-[#2C2C2E]">
+                  <div className="pt-3 border-t border-white/[0.06]">
                     <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Body Metrics</p>
                     <div className="flex flex-wrap gap-3">
                       {ci.body_weight && <span className="font-barlow text-sm text-white/70">Weight: <strong className="text-white">{ci.body_weight} lbs</strong></span>}
@@ -1792,7 +1792,7 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
                 )}
 
                 {/* Photos — 2x2 grid, 80px, with placeholders */}
-                <div className="pt-3 border-t border-[#2C2C2E]">
+                <div className="pt-3 border-t border-white/[0.06]">
                   <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Progress Photos</p>
                   <div className="grid grid-cols-4 gap-2">
                     {allPhotos.map(p => (
@@ -1814,7 +1814,7 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
 
                 {/* Client notes */}
                 {ci.notes && (
-                  <div className="pt-3 border-t border-[#2C2C2E]">
+                  <div className="pt-3 border-t border-white/[0.06]">
                     <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Client Notes</p>
                     <div className="border-l-4 border-white/10 pl-3 py-1">
                       <p className="font-barlow text-sm text-white/60 italic">{ci.notes}</p>
@@ -1823,7 +1823,7 @@ function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; c
                 )}
 
                 {/* Coach response */}
-                <div className="pt-3 border-t border-[#2C2C2E]">
+                <div className="pt-3 border-t border-white/[0.06]">
                   {ci.coach_response && !(ci.id in replyText) ? (
                     <>
                       <p className="font-barlow text-xs text-[#C9A84C] uppercase tracking-wider mb-2">Your Response</p>
@@ -1981,7 +1981,7 @@ function MetricsTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-5">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
         <div className="flex items-center justify-between mb-4">
           <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Training Maxes</p>
           <div className="flex items-center gap-2">
@@ -2003,7 +2003,7 @@ function MetricsTab({
             )}
           </div>
         </div>
-        <div className="flex flex-col divide-y divide-[#2C2C2E]">
+        <div className="flex flex-col divide-y divide-white/[0.06]">
           {allLifts.map(liftName => {
             const max = maxes.find(m => m.exercise_name === liftName)
             const isEditing = editing === liftName
@@ -2060,7 +2060,7 @@ function MetricsTab({
         </div>
 
         {/* Add custom lift */}
-        <div className="pt-4 mt-2 border-t border-[#2C2C2E] flex gap-2">
+        <div className="pt-4 mt-2 border-t border-white/[0.06] flex gap-2">
           <input
             type="text"
             value={customName}
@@ -2206,7 +2206,7 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
       {/* Delete confirmation */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-6">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-sm p-6">
             <p className="font-bebas text-xl text-white tracking-wide mb-2">Delete Document?</p>
             <p className="font-barlow text-sm text-white/50 mb-5">This cannot be undone.</p>
             <div className="flex gap-3">
@@ -2233,7 +2233,7 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
 
       {/* Document list */}
       {docs.length === 0 ? (
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-12 text-center">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-12 text-center">
           <p className="font-barlow text-sm text-white/25">No documents yet. Upload files to share with this client.</p>
         </div>
       ) : (
@@ -2242,7 +2242,7 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
             const icon = fileIcon(doc.file_type)
             const isProgramFile = ['pdf', 'doc', 'docx'].includes((doc.file_type ?? '').toLowerCase())
             return (
-              <div key={doc.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4">
+              <div key={doc.id} className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4">
                 <div className="flex items-center gap-3">
                   {/* File icon */}
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${icon.color}`}>
@@ -2324,7 +2324,7 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
 
 function StubTab({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-16 text-center">
+    <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-16 text-center">
       <p className="font-bebas text-2xl text-white/20 tracking-wide mb-2">{title}</p>
       <p className="font-barlow text-sm text-white/30">{desc}</p>
     </div>

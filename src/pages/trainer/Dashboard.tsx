@@ -156,7 +156,7 @@ export default function Dashboard() {
           { label: 'Total Clients', value: clients.length },
           { label: 'Recent Sessions', value: recentSessions.length },
         ].map(stat => (
-          <div key={stat.label} className="bg-[#1C1C1E] rounded-xl p-5 border border-[#2C2C2E]">
+          <div key={stat.label} className="bg-white/[0.03] backdrop-blur-sm rounded-xl p-5 border border-white/[0.06]">
             <p className="font-bebas text-4xl text-[#C9A84C]">{stat.value}</p>
             <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mt-1">{stat.label}</p>
           </div>
@@ -164,8 +164,8 @@ export default function Dashboard() {
       </div>
 
       {/* Pending check-ins */}
-      <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden mb-6">
-        <div className="px-5 py-4 border-b border-[#2C2C2E] flex items-center justify-between">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] overflow-hidden mb-6">
+        <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
           <h2 className="font-bebas text-lg text-white tracking-wide">Weekly Check-Ins</h2>
           {pendingCheckIns.length > 0 && (
             <span className="font-barlow text-xs bg-[#C9A84C]/15 text-[#C9A84C] px-2.5 py-1 rounded-full">
@@ -183,7 +183,7 @@ export default function Dashboard() {
             <p className="font-barlow text-sm text-white/40">All caught up — no pending check-ins.</p>
           </div>
         ) : (
-          <div className="divide-y divide-[#2C2C2E]">
+          <div className="divide-y divide-white/[0.06]">
             {pendingCheckIns.map(ci => (
               <div key={ci.id} className="px-5 py-3 flex items-center justify-between">
                 <div>
@@ -208,12 +208,12 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 gap-6">
         {/* Client list */}
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#2C2C2E] flex items-center justify-between">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
             <h2 className="font-bebas text-lg text-white tracking-wide">Clients</h2>
             <span className="font-barlow text-xs text-white/40">{clients.length} total</span>
           </div>
-          <div className="divide-y divide-[#2C2C2E]">
+          <div className="divide-y divide-white/[0.06]">
             {clients.length === 0 ? (
               <p className="font-barlow text-sm text-white/30 px-5 py-6">No clients yet.</p>
             ) : (
@@ -237,11 +237,11 @@ export default function Dashboard() {
         </div>
 
         {/* Recent sessions */}
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#2C2C2E]">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/[0.06]">
             <h2 className="font-bebas text-lg text-white tracking-wide">Recent Sessions</h2>
           </div>
-          <div className="divide-y divide-[#2C2C2E]">
+          <div className="divide-y divide-white/[0.06]">
             {recentSessions.length === 0 ? (
               <p className="font-barlow text-sm text-white/30 px-5 py-6">No sessions yet.</p>
             ) : (

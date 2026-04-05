@@ -567,7 +567,7 @@ export default function TrainerSession() {
   return (
     <div className="max-w-3xl pb-12">
       {/* ── Header ── */}
-      <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
         <div className="flex-1 min-w-0">
           <p className="font-bebas text-2xl text-white tracking-wide truncate">{clientName}</p>
           <p className="font-barlow text-sm text-white/40 truncate">
@@ -602,7 +602,7 @@ export default function TrainerSession() {
       {/* ── Exercises ── */}
       <div className="flex flex-col gap-4">
         {exercises.map((ex, exIdx) => (
-          <div key={ex.session_exercise_id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4">
+          <div key={ex.session_exercise_id} className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4">
             {/* Exercise header */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 min-w-0">

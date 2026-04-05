@@ -71,7 +71,7 @@ function MetricCard({ label, lowLabel, highLabel, value, onChange }: {
   label: string; lowLabel: string; highLabel: string; value: number | null; onChange: (v: number) => void
 }) {
   return (
-    <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-4" style={{ minHeight: 100 }}>
+    <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-4" style={{ minHeight: 100 }}>
       <p className="font-bebas text-lg text-white tracking-wide mb-3">{label}</p>
       <div className="flex gap-2 mb-2">
         {[1, 2, 3, 4, 5].map(n => (
@@ -291,7 +291,7 @@ export default function CheckIn() {
           {/* Body metrics */}
           <div className="mb-6">
             <h2 className="font-bebas text-2xl text-white tracking-wide mb-3">Body Metrics</h2>
-            <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-4">
+            <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-4">
               <label className="font-barlow text-xs text-white/40 uppercase tracking-wider block mb-1.5">Body Weight</label>
               <div className="flex items-center gap-2">
                 <input
@@ -379,7 +379,7 @@ export default function CheckIn() {
               onChange={e => setNotes(e.target.value)}
               placeholder="How are you feeling? Anything to mention?"
               rows={4}
-              className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl px-4 py-4 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 resize-none"
+              className="w-full bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl px-4 py-4 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 resize-none"
             />
           </div>
 
@@ -505,7 +505,7 @@ export default function CheckIn() {
                     {url ? (
                       <img src={url} alt={ANGLE_LABELS[compareAngle]} className="w-full aspect-[3/4] object-cover rounded-xl" />
                     ) : (
-                      <div className="w-full aspect-[3/4] bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl flex items-center justify-center">
+                      <div className="w-full aspect-[3/4] bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-xl flex items-center justify-center">
                         <p className="font-barlow text-xs text-white/20 text-center px-2">No photo for this angle</p>
                       </div>
                     )}
@@ -545,7 +545,7 @@ export default function CheckIn() {
 
         {/* Check-in history */}
         {checkIns.length === 0 ? (
-          <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-8 text-center">
+          <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-8 text-center">
             <p className="font-barlow text-sm text-white/30">No check-ins yet. Tap New Check-In to get started.</p>
           </div>
         ) : (
@@ -566,7 +566,7 @@ export default function CheckIn() {
               ].filter(p => p.url)
 
               return (
-                <div key={ci.id} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-4">
+                <div key={ci.id} className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-4">
                   {/* Week heading */}
                   <p className="font-barlow text-sm font-semibold text-white mb-0.5">
                     Week of {getWeekRange(ci.week_start)}

@@ -26,9 +26,9 @@ export default function TrainerLayout() {
   return (
     <div className="flex min-h-screen bg-[#0A0A0A]">
       {/* Sidebar */}
-      <aside className="w-64 bg-[#1C1C1E] min-h-screen flex flex-col fixed left-0 top-0 bottom-0">
+      <aside className="w-64 bg-[#0F0F0F] border-r border-white/[0.04] min-h-screen flex flex-col fixed left-0 top-0 bottom-0">
         {/* Logo */}
-        <div className="p-6 border-b border-[#2C2C2E]">
+        <div className="p-6 border-b border-white/[0.06]">
           <h1 className="font-bebas text-2xl text-[#C9A84C] tracking-wide">Z6</h1>
           <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mt-0.5">Trainer Portal</p>
         </div>
@@ -43,7 +43,7 @@ export default function TrainerLayout() {
                 `px-4 py-2.5 rounded-lg font-barlow text-sm transition-colors ${
                   isActive
                     ? 'bg-[#C9A84C] text-black font-semibold'
-                    : 'text-white/60 hover:text-white hover:bg-[#2C2C2E]'
+                    : 'text-white/60 hover:text-white hover:bg-white/[0.05]'
                 }`
               }
             >
@@ -53,7 +53,7 @@ export default function TrainerLayout() {
         </nav>
 
         {/* User + Sign out */}
-        <div className="p-4 border-t border-[#2C2C2E]">
+        <div className="p-4 border-t border-white/[0.06]">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
               <span className="font-bebas text-sm text-[#C9A84C]">
@@ -67,7 +67,7 @@ export default function TrainerLayout() {
           </div>
           <button
             onClick={handleSignOut}
-            className="w-full text-left px-4 py-2 rounded-lg font-barlow text-sm text-white/40 hover:text-white hover:bg-[#2C2C2E] transition-colors"
+            className="w-full text-left px-4 py-2 rounded-lg font-barlow text-sm text-white/40 hover:text-white hover:bg-white/[0.05] transition-colors"
           >
             Sign out
           </button>

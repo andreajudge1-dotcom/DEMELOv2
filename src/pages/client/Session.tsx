@@ -443,7 +443,7 @@ export default function ClientSession() {
       <div className="max-w-[500px] mx-auto px-4 pt-6">
 
         {/* ── Header ── */}
-        <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-4 mb-4 flex items-center justify-between">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-4 mb-4 flex items-center justify-between">
           <div className="min-w-0">
             <p className="font-bebas text-2xl text-white tracking-wide truncate">{dayName || 'Training'}</p>
             {session?.session_context === 'unscheduled' && (
@@ -478,7 +478,7 @@ export default function ClientSession() {
           {exercises.map((ex, exIdx) => (
             <div
               key={ex.session_exercise_id}
-              className={`bg-[#1C1C1E] rounded-xl border p-4 ${
+              className={`bg-white/[0.03] backdrop-blur-sm rounded-xl border p-4 ${
                 ex.skipped ? 'border-[#2C2C2E] opacity-50' : 'border-[#2C2C2E]'
               }`}
             >
@@ -592,7 +592,7 @@ export default function ClientSession() {
       {/* ── Skip modal ── */}
       {skipForIndex !== null && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-5">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-sm p-5">
             <h2 className="font-bebas text-xl text-white tracking-wide mb-2">Skip {exercises[skipForIndex].exercise_name}?</h2>
             <textarea
               value={skipNote}

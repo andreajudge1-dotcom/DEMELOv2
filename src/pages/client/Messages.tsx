@@ -293,7 +293,7 @@ export default function ClientMessages() {
           if (msg.is_broadcast) {
             return (
               <div key={msg.id} className="w-full">
-                <div className="bg-[#1C1C1E] border-l-4 border-[#C9A84C] rounded-r-2xl rounded-bl-2xl px-4 py-3">
+                <div className="bg-white/[0.03] border-l-4 border-[#C9A84C] rounded-r-2xl rounded-bl-2xl px-4 py-3">
                   <p className="font-barlow text-[10px] text-[#C9A84C] uppercase tracking-widest mb-1">
                     📣 Announcement
                   </p>
@@ -314,7 +314,7 @@ export default function ClientMessages() {
                 className={`max-w-[78%] px-4 py-3 ${
                   isClient
                     ? 'bg-[#C9A84C] text-black rounded-t-2xl rounded-bl-2xl rounded-br-sm'
-                    : 'bg-[#1C1C1E] text-white rounded-t-2xl rounded-br-2xl rounded-bl-sm'
+                    : 'bg-white/[0.03] text-white rounded-t-2xl rounded-br-2xl rounded-bl-sm'
                 }`}
               >
                 <p className="font-barlow text-sm leading-relaxed">{msg.body}</p>
@@ -345,7 +345,7 @@ export default function ClientMessages() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={`Message ${trainerName}...`}
-            className="flex-1 bg-[#1C1C1E] border border-[#3A3A3C] rounded-2xl px-4 py-3 text-white font-barlow text-sm placeholder-[#555] focus:outline-none focus:border-[#C9A84C] resize-none leading-relaxed"
+            className="flex-1 bg-white/[0.03] border border-[#3A3A3C] rounded-2xl px-4 py-3 text-white font-barlow text-sm placeholder-[#555] focus:outline-none focus:border-[#C9A84C] resize-none leading-relaxed"
             style={{ maxHeight: '120px', overflowY: 'auto' }}
           />
           <button

@@ -136,7 +136,7 @@ export default function Vault() {
       {/* Delete confirmation */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm p-6">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-sm p-6">
             <p className="font-bebas text-xl text-white tracking-wide mb-2">Delete Document?</p>
             <p className="font-barlow text-sm text-white/50 mb-5">This cannot be undone.</p>
             <div className="flex gap-3">
@@ -181,7 +181,7 @@ export default function Vault() {
 
       {/* Document list */}
       {docs.length === 0 ? (
-        <div className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-16 text-center">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-16 text-center">
           <svg className="w-12 h-12 text-white/10 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
           </svg>
@@ -197,7 +197,7 @@ export default function Vault() {
             const clientName = (doc.clients as any)?.full_name
 
             return (
-              <div key={doc.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] p-4">
+              <div key={doc.id} className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4">
                 <div className="flex items-center gap-4">
                   {/* File icon */}
                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${icon.color}`}>

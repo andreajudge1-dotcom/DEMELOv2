@@ -68,7 +68,7 @@ export default function Vault() {
         <p className="font-barlow text-sm text-white/40 mb-6">Documents and resources from your coach.</p>
 
         {docs.length === 0 ? (
-          <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-8 text-center">
+          <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-8 text-center">
             <svg className="w-10 h-10 text-white/10 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
             </svg>
@@ -84,7 +84,7 @@ export default function Vault() {
                   href={doc.file_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl p-4 flex items-center gap-3 hover:border-[#3A3A3C] transition-colors"
+                  className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-xl p-4 flex items-center gap-3 hover:border-[#3A3A3C] transition-colors"
                 >
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${icon.color}`}>
                     <span className="font-bebas text-xs">{icon.label}</span>

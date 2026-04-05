@@ -24,8 +24,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 4096,
         system: 'You are a fitness program parser. Extract the complete training program structure from this document and return only valid JSON with no other text, markdown, or explanation.',
         messages: [
           {
@@ -71,7 +71,7 @@ ${documentText}`,
     if (!response.ok) {
       const errBody = await response.text()
       console.error('Claude API error:', response.status, errBody)
-      return res.status(502).json({ error: `Claude API error: ${response.status}` })
+      return res.status(502).json({ error: `Claude API error: ${response.status} — ${errBody.substring(0, 200)}` })
     }
 
     const data = await response.json()

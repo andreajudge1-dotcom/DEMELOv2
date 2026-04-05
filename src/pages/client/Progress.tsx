@@ -178,7 +178,7 @@ export default function Progress() {
 
         <div className="flex flex-col gap-3 mb-8">
           {bigThree.map(lift => (
-            <div key={lift.name} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-5">
+            <div key={lift.name} className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-5">
               <p className="font-bebas text-lg text-white tracking-wide mb-2">{lift.name}</p>
               {lift.bestWeight !== null ? (
                 <>
@@ -212,13 +212,13 @@ export default function Progress() {
         <h2 className="font-bebas text-2xl text-white tracking-wide mb-3">All Personal Records</h2>
 
         {allPRs.length === 0 ? (
-          <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-8 text-center">
+          <div className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-8 text-center">
             <p className="font-barlow text-sm text-white/30">Your PRs will appear here after your first session.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
             {allPRs.map((pr, i) => (
-              <div key={i} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-4 py-3 flex items-center justify-between">
+              <div key={i} className="bg-white/[0.03] backdrop-blur-sm border border-white/[0.06] rounded-xl px-4 py-3 flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <p className="font-barlow text-sm text-white truncate">{pr.exercise_name}</p>
                   <div className="flex items-center gap-2 mt-0.5">

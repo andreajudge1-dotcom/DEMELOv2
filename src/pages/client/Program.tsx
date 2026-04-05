@@ -260,7 +260,7 @@ export default function ClientProgram() {
           {/* Program card */}
           <button
             onClick={() => setShowDetail(true)}
-            className="w-full bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] overflow-hidden text-left hover:border-[#3A3A3C] transition-colors group"
+            className="w-full bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] overflow-hidden text-left hover:border-[#3A3A3C] transition-colors group"
           >
             {/* Cover image */}
             <div
@@ -388,12 +388,12 @@ export default function ClientProgram() {
 
         {/* ── Day Detail ── */}
         {isRestDay ? (
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-5 text-center">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-5 text-center">
             <h2 className="font-bebas text-2xl text-white tracking-wide mb-2">Rest Day</h2>
             <p className="font-barlow text-sm text-white/30">Recovery is part of the program. Rest up.</p>
           </div>
         ) : selectedWorkout ? (
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] p-5">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-5">
             {/* Day name */}
             <h2 className="font-bebas text-2xl text-white tracking-wide mb-4">{selectedWorkout.name}</h2>
 

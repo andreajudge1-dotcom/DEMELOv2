@@ -123,7 +123,7 @@ function ClientLayoutInner() {
       </main>
 
       {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[#1C1C1E] border-t border-[#2C2C2E] z-50">
+      <nav className="fixed bottom-0 left-0 right-0 bg-[#0A0A0A]/90 backdrop-blur-xl border-t border-white/[0.06] z-50">
         <div className="max-w-[390px] mx-auto">
           {/* Tab icons */}
           <div className="flex items-center justify-around px-2 py-2">
