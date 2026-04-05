@@ -93,7 +93,7 @@ export default function ProgramBuilder() {
   const [pickerFilter, setPickerFilter] = useState<string | undefined>(undefined)
   const [showCoverPicker, setShowCoverPicker] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
-  const [expandedSummaryDay, setExpandedSummaryDay] = useState<number | null>(null)
+  const [expandedSummaryDays, setExpandedSummaryDays] = useState<Set<number>>(new Set())
   const [showSaveModal, setShowSaveModal] = useState(false)
 
   useEffect(() => { fetchClients() }, [])
@@ -949,17 +949,22 @@ export default function ProgramBuilder() {
                 <h2 className="font-bebas text-xl text-white tracking-wide">Program Summary</h2>
                 <p className="font-barlow text-xs text-white/40 mt-0.5">{form.numDays} days · {form.numWeeks} weeks</p>
               </div>
-              <button onClick={() => { setShowSummary(false); setExpandedSummaryDay(null) }} className="font-barlow text-sm text-white/40 hover:text-white">✕</button>
+              <button onClick={() => { setShowSummary(false); setExpandedSummaryDays(new Set()) }} className="font-barlow text-sm text-white/40 hover:text-white">✕</button>
             </div>
             <div className="divide-y divide-[#2C2C2E] max-h-[60vh] overflow-y-auto">
               {days.map(day => {
-                const isOpen = expandedSummaryDay === day.day_number
+                const isOpen = expandedSummaryDays.has(day.day_number)
                 const canExpand = !day.is_rest_day && day.exercises.length > 0
                 return (
                   <div key={day.day_number}>
                     <div
                       className={`px-5 py-3 flex items-center gap-4 ${canExpand ? 'cursor-pointer hover:bg-[#242424]' : ''} transition-colors`}
-                      onClick={() => canExpand && setExpandedSummaryDay(isOpen ? null : day.day_number)}
+                      onClick={() => canExpand && setExpandedSummaryDays(prev => {
+                        const next = new Set(prev)
+                        if (next.has(day.day_number)) next.delete(day.day_number)
+                        else next.add(day.day_number)
+                        return next
+                      })}
                     >
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-bebas text-sm ${
                         day.is_rest_day ? 'bg-[#2C2C2E] text-white/30' : 'bg-[#C9A84C]/20 text-[#C9A84C]'
@@ -1002,7 +1007,7 @@ export default function ProgramBuilder() {
               })}
             </div>
             <div className="px-5 py-3 border-t border-[#2C2C2E]">
-              <button onClick={() => { setShowSummary(false); setExpandedSummaryDay(null) }} className="w-full font-barlow text-sm text-white/40 hover:text-white transition-colors">Close</button>
+              <button onClick={() => { setShowSummary(false); setExpandedSummaryDays(new Set()) }} className="w-full font-barlow text-sm text-white/40 hover:text-white transition-colors">Close</button>
             </div>
           </div>
         </div>
