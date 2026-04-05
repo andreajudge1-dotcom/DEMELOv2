@@ -581,6 +581,76 @@ export default function CheckIn() {
         </>
         )}
 
+        {/* ── CHECK-IN HISTORY ── */}
+        {checkIns.length > 0 && (
+          <div className="mt-8">
+            <h2 className="font-bebas text-2xl text-white tracking-wide mb-4">Past Check-Ins</h2>
+            <div className="flex flex-col gap-3">
+              {checkIns.map(ci => {
+                const monday = getMondayOfWeek(new Date(ci.week_start + 'T00:00:00'))
+                const range = getWeekRange(monday)
+                const scores = [
+                  { label: 'Sleep', val: ci.sleep_score },
+                  { label: 'Nutrition', val: ci.nutrition_score },
+                  { label: 'Fatigue', val: ci.fatigue_score },
+                  { label: 'Soreness', val: ci.soreness_score },
+                  { label: 'Performance', val: ci.performance_score },
+                ]
+
+                return (
+                  <div key={ci.id} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-4">
+                    {/* Week header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="font-barlow text-sm font-semibold text-white">Week of {range}</p>
+                      {ci.body_weight && (
+                        <span className="font-barlow text-xs text-white/40">{ci.body_weight} lbs</span>
+                      )}
+                    </div>
+
+                    {/* Score pills */}
+                    <div className="flex gap-1.5 mb-3">
+                      {scores.map(s => (
+                        <div
+                          key={s.label}
+                          className={`flex-1 flex flex-col items-center gap-0.5 rounded-lg py-1.5 ${
+                            s.val === null ? 'bg-[#2C2C2E]'
+                            : s.val >= 4 ? 'bg-green-500/15'
+                            : s.val === 3 ? 'bg-yellow-500/15'
+                            : 'bg-red-500/15'
+                          }`}
+                        >
+                          <span className={`font-bebas text-sm leading-none ${
+                            s.val === null ? 'text-white/25'
+                            : s.val >= 4 ? 'text-green-400'
+                            : s.val === 3 ? 'text-yellow-400'
+                            : 'text-red-400'
+                          }`}>
+                            {s.val ?? '—'}
+                          </span>
+                          <span className="font-barlow text-white/25" style={{ fontSize: 8 }}>{s.label}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Client notes */}
+                    {ci.notes && (
+                      <p className="font-barlow text-xs text-white/40 italic mb-3">{ci.notes}</p>
+                    )}
+
+                    {/* Coach response */}
+                    {ci.coach_response && (
+                      <div className="border-l-4 border-[#C9A84C] bg-[#C9A84C]/5 pl-3 pr-3 py-2 rounded-r-lg">
+                        <p className="font-barlow text-[10px] text-[#C9A84C] uppercase tracking-wider mb-1">Coach response</p>
+                        <p className="font-barlow text-sm text-white/70">{ci.coach_response}</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   )
