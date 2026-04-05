@@ -48,12 +48,6 @@ interface Session {
   completed_at: string | null
 }
 
-interface Notification {
-  id: string
-  title: string
-  body: string | null
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,7 +94,6 @@ export default function ClientHome() {
   const [workouts, setWorkouts] = useState<Workout[]>([])
   const [todayExercises, setTodayExercises] = useState<WorkoutExercise[]>([])
   const [completedSessions, setCompletedSessions] = useState<Session[]>([])
-  const [notification, setNotification] = useState<Notification | null>(null)
   const [currentWeek, setCurrentWeek] = useState(1)
   const [startingSession, setStartingSession] = useState(false)
   const [showDayPicker, setShowDayPicker] = useState(false)
@@ -118,7 +111,6 @@ export default function ClientHome() {
   async function loadAll(userId: string) {
     setLoading(true)
 
-    // 1. Client record
     const { data: clientRow } = await supabase
       .from('clients')
       .select('id, full_name, trainer_id')
@@ -128,7 +120,6 @@ export default function ClientHome() {
     if (!clientRow) { setLoading(false); return }
     setClient(clientRow)
 
-    // 2. Trainer
     const { data: trainerRow } = await supabase
       .from('profiles')
       .select('full_name')
@@ -136,7 +127,6 @@ export default function ClientHome() {
       .maybeSingle()
     setTrainer(trainerRow ?? null)
 
-    // 3. Active program
     const { data: assignRow } = await supabase
       .from('client_cycle_assignments')
       .select('id, cycle_id, next_day_number, training_cycles(name, num_days, num_weeks)')
@@ -151,7 +141,6 @@ export default function ClientHome() {
     const week = Math.ceil(assignRow.next_day_number / numDays)
     setCurrentWeek(week)
 
-    // 4. Workouts for this cycle
     const { data: workoutRows } = await supabase
       .from('workouts')
       .select('id, day_number, name, focus')
@@ -159,20 +148,7 @@ export default function ClientHome() {
       .order('day_number')
     setWorkouts(workoutRows ?? [])
 
-    // 5. Today's workout exercises
-    const todayWorkout = (workoutRows ?? []).find(
-      w => w.day_number === assignRow.next_day_number
-    )
-    if (todayWorkout) {
-      const { data: exRows } = await supabase
-        .from('workout_exercises')
-        .select('id, exercises(name), workout_set_prescriptions(rpe_target)')
-        .eq('workout_id', todayWorkout.id)
-        .order('position')
-      setTodayExercises((exRows ?? []) as unknown as WorkoutExercise[])
-    }
-
-    // 6. Sessions completed this week
+    // Sessions completed this week
     const monday = getMondayOfWeek(new Date())
     const sunday = getSundayOfWeek(new Date())
     const { data: sessionRows } = await supabase
@@ -184,32 +160,34 @@ export default function ClientHome() {
       .lte('completed_at', sunday.toISOString())
     setCompletedSessions(sessionRows ?? [])
 
-    // 7. Unread notifications
-    const { data: notifRows } = await supabase
-      .from('notifications')
-      .select('id, title, body')
-      .eq('profile_id', userId)
-      .is('read_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-    setNotification(notifRows?.[0] ?? null)
+    // Determine suggested next day — first workout not completed this week
+    const completedIds = new Set((sessionRows ?? []).map(s => s.workout_id))
+    const suggestedWorkout = (workoutRows ?? []).find(w => !completedIds.has(w.id))
+      ?? (workoutRows ?? []).find(w => w.day_number === assignRow.next_day_number)
+      ?? (workoutRows ?? [])[0]
+
+    if (suggestedWorkout) {
+      const { data: exRows } = await supabase
+        .from('workout_exercises')
+        .select('id, exercises(name), workout_set_prescriptions(rpe_target)')
+        .eq('workout_id', suggestedWorkout.id)
+        .order('position')
+      setTodayExercises((exRows ?? []) as unknown as WorkoutExercise[])
+    }
 
     setLoading(false)
   }
 
-  async function dismissNotification() {
-    if (!notification) return
-    await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .eq('id', notification.id)
-    setNotification(null)
-  }
+  // ── Actions ──
 
   async function startSession(workoutOverride?: Workout) {
     if (!client || !program || startingSession) return
     setStartingSession(true)
-    const w = workoutOverride ?? workouts.find(wo => wo.day_number === (program?.next_day_number ?? 1)) ?? null
+
+    const completedIds = new Set(completedSessions.map(s => s.workout_id))
+    const suggestedWorkout = workouts.find(w => !completedIds.has(w.id)) ?? workouts[0]
+    const w = workoutOverride ?? suggestedWorkout ?? null
+
     const { data, error } = await supabase
       .from('sessions')
       .insert({
@@ -266,14 +244,17 @@ export default function ClientHome() {
   // ── Derived ──
   const firstName = client?.full_name?.split(' ')[0] ?? 'there'
   const trainerName = trainer?.full_name ?? 'Your coach'
+  const trainerFirstName = trainerName.split(' ')[0]
   const trainerInitial = trainerName.charAt(0).toUpperCase()
   const numDays = (program?.training_cycles as any)?.num_days ?? 4
   const numWeeks = (program?.training_cycles as any)?.num_weeks ?? 4
   const programName = (program?.training_cycles as any)?.name ?? ''
-  const nextDayNumber = program?.next_day_number ?? 1
 
-  const todayWorkout = workouts.find(w => w.day_number === nextDayNumber)
-  const todayCompleted = completedSessions.some(s => s.workout_id === todayWorkout?.id)
+  // Suggested workout = first not completed this week
+  const completedIds = new Set(completedSessions.map(s => s.workout_id))
+  const suggestedWorkout = workouts.find(w => !completedIds.has(w.id)) ?? workouts[0] ?? null
+  const todayCompleted = suggestedWorkout ? completedIds.has(suggestedWorkout.id) : false
+  const isRestDay = !suggestedWorkout
 
   // ─────────────────────────────────────────────────────────────────────────
   // Loading
@@ -288,117 +269,242 @@ export default function ClientHome() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // HOLDING STATE — no program
+  // STATE 1 — NO PROGRAM ASSIGNED
   // ─────────────────────────────────────────────────────────────────────────
 
   if (!program) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] flex flex-col items-center justify-center px-6 text-center">
-        <div className="flex items-center justify-center mb-8">
+      <div className="min-h-screen bg-[#0A0A0A] pb-24">
+        <div className="max-w-[390px] mx-auto px-5 pt-16 flex flex-col items-center text-center">
+          <h1 className="font-bebas text-5xl text-white tracking-wide mb-3">
+            {firstName}.
+          </h1>
+          <p className="font-barlow text-white/40 text-base leading-relaxed max-w-xs mb-10">
+            Your coach is building your program. You will be notified when it is ready.
+          </p>
+
+          {/* Action cards */}
+          <div className="w-full flex flex-col gap-3 mb-12">
+            <button
+              onClick={() => navigate('/client/checkin')}
+              className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-barlow text-sm font-semibold text-white">Check In</p>
+                <p className="font-barlow text-xs text-white/30 mt-0.5">Submit your weekly check-in</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/client/messages')}
+              className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-barlow text-sm font-semibold text-white">Message {trainerFirstName}</p>
+                <p className="font-barlow text-xs text-white/30 mt-0.5">Send a message to your coach</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/client/vault')}
+              className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl px-5 py-4 flex items-center gap-4 text-left hover:border-[#3A3A3C] transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#C9A84C]/10 flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-barlow text-sm font-semibold text-white">View Vault</p>
+                <p className="font-barlow text-xs text-white/30 mt-0.5">Documents and resources</p>
+              </div>
+            </button>
+          </div>
+
+          {/* Gold pulsing dot */}
           <div className="relative w-4 h-4">
             <div className="absolute inset-0 rounded-full bg-[#C9A84C]/40 animate-ping" style={{ animationDuration: '2s' }} />
             <div className="w-4 h-4 rounded-full bg-[#C9A84C]/70" />
           </div>
         </div>
-        <h1 className="font-bebas text-4xl text-white tracking-wide mb-3">
-          Hey {firstName}.
-        </h1>
-        <p className="font-barlow text-white/40 text-base leading-relaxed max-w-xs">
-          Your program is on its way. Your coach will notify you when it's ready.
-        </p>
       </div>
     )
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ACTIVE STATE
+  // STATE 3 — REST DAY (all days completed)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (isRestDay) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] pb-24">
+        <div className="max-w-[390px] mx-auto px-4 pt-12">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-5">
+            <div>
+              <p className="font-barlow text-white/40 text-sm">{getGreeting()},</p>
+              <h1 className="font-bebas text-5xl text-white tracking-wide leading-tight">{firstName}.</h1>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 flex items-center justify-center">
+                <span className="font-bebas text-sm text-[#C9A84C]">{trainerInitial}</span>
+              </div>
+              <span className="font-barlow text-xs text-white/40">{trainerFirstName}</span>
+            </div>
+          </div>
+
+          {/* Program pill */}
+          <div className="mb-5 inline-flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#C9A84C]" />
+            <span className="font-barlow text-xs text-[#C9A84C]">
+              {programName} · Week {currentWeek} of {numWeeks}
+            </span>
+          </div>
+
+          {/* Check-in banner */}
+          {hasCheckedInThisWeek === false && (
+            <button
+              onClick={() => navigate('/client/checkin')}
+              className="w-full mb-4 flex items-center gap-3 bg-[#1C1C1E] border border-[#2C2C2E] border-l-[#C9A84C] border-l-4 rounded-2xl px-4 py-4 text-left"
+            >
+              <div className="flex-1">
+                <p className="font-barlow text-sm font-semibold text-[#C9A84C]">Your weekly check-in is due.</p>
+                <p className="font-barlow text-xs text-[#C9A84C]/60 mt-0.5">Tap to complete</p>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          )}
+
+          {/* Rest Day card */}
+          <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-5 mb-4">
+            <h2 className="font-bebas text-4xl text-white tracking-wide leading-tight mb-3">Rest Day</h2>
+            <p className="font-barlow text-sm text-white/30">
+              Recovery is part of the program. Rest up — you have earned it.
+            </p>
+          </div>
+
+          {/* Week strip */}
+          <WeekStrip workouts={workouts} completedSessions={completedSessions} suggestedId={null} />
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE 2 — TRAINING DAY
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] pb-24">
       <div className="max-w-[390px] mx-auto px-4 pt-12">
 
-        {/* ── SECTION 1: HEADER ── */}
-        <div className="mb-5">
-          <p className="font-barlow text-white/40 text-sm">{getGreeting()},</p>
-          <h1 className="font-bebas text-5xl text-white tracking-wide leading-tight">
-            {firstName}.
-          </h1>
-
-          {/* Coach row */}
-          <div className="flex items-center gap-2 mt-3">
-            <div className="w-7 h-7 rounded-full bg-[#C9A84C]/20 flex items-center justify-center flex-shrink-0">
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between mb-5">
+          <div>
+            <p className="font-barlow text-white/40 text-sm">{getGreeting()},</p>
+            <h1 className="font-bebas text-5xl text-white tracking-wide leading-tight">{firstName}.</h1>
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 flex items-center justify-center">
               <span className="font-bebas text-sm text-[#C9A84C]">{trainerInitial}</span>
             </div>
-            <span className="font-barlow text-sm text-white/40">
-              Your coach: <span className="text-white/70">{trainerName}</span>
-            </span>
-          </div>
-
-          {/* Program pill */}
-          <div className="mt-3 inline-flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#C9A84C]" />
-            <span className="font-barlow text-xs text-[#C9A84C]">
-              {programName} · Week {currentWeek} of {numWeeks}
-            </span>
+            <span className="font-barlow text-xs text-white/40">{trainerFirstName}</span>
           </div>
         </div>
 
-        {/* ── SECTION 2: NOTIFICATION STRIP ── */}
-        {notification && (
-          <div className="mb-4 bg-[#1C1C1E] border border-[#2C2C2E] border-l-[#C9A84C] border-l-4 rounded-xl px-4 py-3 flex items-start gap-3">
-            <div className="w-2 h-2 rounded-full bg-[#C9A84C] flex-shrink-0 mt-1" />
-            <div className="flex-1 min-w-0">
-              <p className="font-barlow text-sm text-white leading-snug">{notification.title}</p>
-              {notification.body && (
-                <p className="font-barlow text-xs text-white/40 mt-0.5 truncate">{notification.body}</p>
-              )}
-            </div>
-            <button
-              onClick={dismissNotification}
-              className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] flex-shrink-0 min-h-[44px] flex items-center"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
+        {/* Program pill */}
+        <div className="mb-5 inline-flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#C9A84C]" />
+          <span className="font-barlow text-xs text-[#C9A84C]">
+            {programName} · Week {currentWeek} of {numWeeks}
+          </span>
+        </div>
 
-        {/* ── SECTION 2b: CHECK-IN BANNER ── */}
+        {/* ── Check-in banner ── */}
         {hasCheckedInThisWeek === false && (
           <button
             onClick={() => navigate('/client/checkin')}
-            className="w-full mb-4 flex items-center gap-3 bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-2xl px-4 py-4 text-left min-h-[56px]"
+            className="w-full mb-4 flex items-center gap-3 bg-[#1C1C1E] border border-[#2C2C2E] border-l-[#C9A84C] border-l-4 rounded-2xl px-4 py-4 text-left"
           >
-            <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 flex items-center justify-center flex-shrink-0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
             <div className="flex-1">
-              <p className="font-barlow text-sm font-semibold text-[#C9A84C] leading-tight">
-                Your weekly check-in is due.
-              </p>
+              <p className="font-barlow text-sm font-semibold text-[#C9A84C]">Your weekly check-in is due.</p>
               <p className="font-barlow text-xs text-[#C9A84C]/60 mt-0.5">Tap to complete</p>
             </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="flex-shrink-0">
-              <path d="M9 18l6-6-6-6" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="#C9A84C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
         )}
 
-        {/* ── SECTION 3: TODAY CARD ── */}
-        <TodayCard
-          dayNumber={nextDayNumber}
-          numDays={numDays}
-          workout={todayWorkout ?? null}
-          exercises={todayExercises}
-          completed={todayCompleted}
-          onStart={() => startSession()}
-          starting={startingSession}
-        />
+        {/* ── Today card ── */}
+        <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-5 mb-2">
+          {/* Top row */}
+          <div className="flex items-start justify-between mb-3">
+            <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">
+              Day {suggestedWorkout.day_number} of {numDays}
+            </p>
+            {todayExercises.length > 0 && (
+              <span className="bg-[#C9A84C]/15 text-[#C9A84C] font-bebas text-sm px-2.5 py-0.5 rounded-full tracking-wide">
+                {todayExercises.length} exercises
+              </span>
+            )}
+          </div>
+
+          {/* Day name */}
+          <h2 className="font-bebas text-4xl text-white tracking-wide leading-tight mb-4">
+            {suggestedWorkout.name}
+          </h2>
+
+          {todayCompleted ? (
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
+                <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <span className="font-barlow text-sm text-green-400">Completed</span>
+            </div>
+          ) : (
+            <>
+              {/* Exercise preview */}
+              <div className="flex flex-col gap-1.5 mb-4">
+                {todayExercises.slice(0, 2).map(ex => {
+                  const sets = ex.workout_set_prescriptions?.length ?? 0
+                  const rpe = ex.workout_set_prescriptions?.[0]?.rpe_target
+                  return (
+                    <div key={ex.id} className="flex items-center justify-between">
+                      <span className="font-barlow text-sm text-white/70">{ex.exercises?.name ?? 'Exercise'}</span>
+                      <span className="font-barlow text-xs text-white/30">{sets} sets{rpe ? ` · RPE ${rpe}` : ''}</span>
+                    </div>
+                  )
+                })}
+                {todayExercises.length > 2 && (
+                  <p className="font-barlow text-xs text-white/25">+ {todayExercises.length - 2} more</p>
+                )}
+              </div>
+
+              {/* START SESSION button */}
+              <button
+                onClick={() => startSession()}
+                disabled={startingSession}
+                className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-colors min-h-[56px] disabled:opacity-50"
+              >
+                {startingSession ? 'STARTING...' : 'START SESSION'}
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Do a different day */}
-        {!todayCompleted && todayWorkout && (
+        {!todayCompleted && suggestedWorkout && (
           <button
             onClick={() => setShowDayPicker(true)}
             className="w-full mb-4 font-barlow text-xs text-white/30 hover:text-[#C9A84C] transition-colors"
@@ -407,22 +513,16 @@ export default function ClientHome() {
           </button>
         )}
 
-        {/* ── SECTION 4: THIS WEEK STRIP ── */}
-        <WeekStrip
-          workouts={workouts}
-          numDays={numDays}
-          nextDayNumber={nextDayNumber}
-          completedSessions={completedSessions}
-        />
+        {/* ── This week strip ── */}
+        <WeekStrip workouts={workouts} completedSessions={completedSessions} suggestedId={suggestedWorkout?.id ?? null} />
 
-        {/* ── SECTION 5: EXTRA WORKOUT ── */}
+        {/* ── Extra workout ── */}
         <button
           onClick={() => { setShowExtraSheet(true); setExtraType(null) }}
           className="w-full mt-3 border border-[#2C2C2E] rounded-2xl py-4 font-barlow text-sm text-white/30 hover:text-white/60 hover:border-[#3A3A3C] transition-colors min-h-[56px]"
         >
           + Log extra workout
         </button>
-
       </div>
 
       {/* ── Day picker bottom sheet ── */}
@@ -436,16 +536,20 @@ export default function ClientHome() {
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
               {workouts.map(w => {
                 const isDone = completedSessions.some(s => s.workout_id === w.id)
-                const isCurrent = w.day_number === nextDayNumber
+                const isSuggested = w.id === suggestedWorkout?.id
                 return (
                   <button
                     key={w.id}
                     onClick={() => { setShowDayPicker(false); startSession(w) }}
-                    className={`flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${
-                      isDone ? 'bg-green-500/5 border border-green-500/20' : 'bg-[#2C2C2E] hover:bg-[#3A3A3C] border border-transparent'
+                    className={`flex items-center gap-3 p-3.5 rounded-xl text-left transition-colors border ${
+                      isDone ? 'bg-green-500/5 border-green-500/20' : isSuggested ? 'border-[#C9A84C]/30 bg-[#C9A84C]/5 hover:bg-[#C9A84C]/10' : 'border-[#2C2C2E] bg-[#2C2C2E] hover:bg-[#3A3A3C]'
                     }`}
                   >
-                    <span className={`font-bebas text-lg w-8 text-center flex-shrink-0 ${isCurrent ? 'text-[#C9A84C]' : 'text-white/40'}`}>{w.day_number}</span>
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      isSuggested ? 'bg-[#C9A84C] text-black' : 'bg-[#3A3A3C] text-white/50'
+                    }`}>
+                      <span className="font-bebas text-base">{w.day_number}</span>
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-barlow text-sm text-white truncate">{w.name}</p>
                       {w.focus && <p className="font-barlow text-xs text-white/30 capitalize">{w.focus}</p>}
@@ -454,6 +558,9 @@ export default function ClientHome() {
                       <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
+                    )}
+                    {isSuggested && !isDone && (
+                      <span className="font-barlow text-[10px] text-[#C9A84C] uppercase tracking-wider">Suggested</span>
                     )}
                   </button>
                 )
@@ -472,27 +579,16 @@ export default function ClientHome() {
               <button onClick={() => { setShowExtraSheet(false); setExtraType(null) }} className="text-white/40 hover:text-white text-lg">×</button>
             </div>
             <div className="p-4">
-              {/* Type selector */}
               {!extraType ? (
                 <div className="flex flex-wrap gap-2">
                   {['Strength', 'Cardio', 'Mobility', 'Sport', 'Other'].map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setExtraType(t)}
-                      className="px-4 py-2.5 bg-[#2C2C2E] hover:bg-[#3A3A3C] rounded-xl font-barlow text-sm text-white transition-colors"
-                    >
-                      {t}
-                    </button>
+                    <button key={t} onClick={() => setExtraType(t)} className="px-4 py-2.5 bg-[#2C2C2E] hover:bg-[#3A3A3C] rounded-xl font-barlow text-sm text-white transition-colors">{t}</button>
                   ))}
                 </div>
               ) : extraType === 'Strength' ? (
                 <div>
                   <p className="font-barlow text-sm text-white/50 mb-3">This will open a free-form session where you can search and add exercises.</p>
-                  <button
-                    onClick={saveExtraWorkout}
-                    disabled={savingExtra}
-                    className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
-                  >
+                  <button onClick={saveExtraWorkout} disabled={savingExtra} className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50">
                     {savingExtra ? 'Starting...' : 'Start Strength Session'}
                   </button>
                 </div>
@@ -513,11 +609,7 @@ export default function ClientHome() {
                     <label className="font-barlow text-xs text-white/30 block mb-1">Notes</label>
                     <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} placeholder="What did you do?" rows={2} className="w-full bg-[#0A0A0A] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-sm text-white placeholder-white/20 resize-none outline-none focus:border-[#C9A84C]/50" />
                   </div>
-                  <button
-                    onClick={saveExtraWorkout}
-                    disabled={savingExtra}
-                    className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
-                  >
+                  <button onClick={saveExtraWorkout} disabled={savingExtra} className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50">
                     {savingExtra ? 'Saving...' : 'Save Workout'}
                   </button>
                 </div>
@@ -531,174 +623,66 @@ export default function ClientHome() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TODAY CARD
-// ─────────────────────────────────────────────────────────────────────────────
-
-function TodayCard({
-  dayNumber,
-  numDays,
-  workout,
-  exercises,
-  completed,
-  onStart,
-  starting,
-}: {
-  dayNumber: number
-  numDays: number
-  workout: Workout | null
-  exercises: WorkoutExercise[]
-  completed: boolean
-  onStart: () => void
-  starting?: boolean
-}) {
-  const isRestDay = !workout
-
-  return (
-    <div className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl p-5 mb-4">
-      {/* Top row */}
-      <div className="flex items-start justify-between mb-3">
-        <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">
-          Day {dayNumber} of {numDays}
-        </p>
-        {!isRestDay && exercises.length > 0 && (
-          <span className="bg-[#C9A84C]/15 text-[#C9A84C] font-bebas text-sm px-2.5 py-0.5 rounded-full tracking-wide">
-            {exercises.length} exercises
-          </span>
-        )}
-      </div>
-
-      {/* Workout name */}
-      <h2 className="font-bebas text-4xl text-white tracking-wide leading-tight mb-4">
-        {isRestDay ? 'Rest Day' : (workout?.name ?? 'Training Day')}
-      </h2>
-
-      {isRestDay ? (
-        <p className="font-barlow text-sm text-white/30 mb-1">
-          Recovery is part of the program. Rest up.
-        </p>
-      ) : completed ? (
-        // Completed state
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
-            <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <span className="font-barlow text-sm text-green-400">Completed</span>
-          <button className="font-barlow text-xs text-white/30 hover:text-white/60 ml-2 transition-colors">
-            View Session
-          </button>
-        </div>
-      ) : (
-        // Exercise preview
-        <>
-          <div className="flex flex-col gap-1.5 mb-4">
-            {exercises.slice(0, 2).map(ex => {
-              const sets = ex.workout_set_prescriptions?.length ?? 0
-              const rpe = ex.workout_set_prescriptions?.[0]?.rpe_target
-              return (
-                <div key={ex.id} className="flex items-center justify-between">
-                  <span className="font-barlow text-sm text-white/70">
-                    {ex.exercises?.name ?? 'Exercise'}
-                  </span>
-                  <span className="font-barlow text-xs text-white/30">
-                    {sets} sets{rpe ? ` · RPE ${rpe}` : ''}
-                  </span>
-                </div>
-              )
-            })}
-            {exercises.length > 2 && (
-              <p className="font-barlow text-xs text-white/25">
-                + {exercises.length - 2} more exercise{exercises.length - 2 > 1 ? 's' : ''}
-              </p>
-            )}
-          </div>
-
-          <button
-            onClick={onStart}
-            disabled={starting}
-            className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-colors min-h-[56px] disabled:opacity-50"
-          >
-            {starting ? 'STARTING...' : 'START SESSION'}
-          </button>
-        </>
-      )}
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // WEEK STRIP
 // ─────────────────────────────────────────────────────────────────────────────
 
 function WeekStrip({
   workouts,
-  numDays,
-  nextDayNumber,
   completedSessions,
+  suggestedId,
 }: {
   workouts: Workout[]
-  numDays: number
-  nextDayNumber: number
   completedSessions: Session[]
+  suggestedId: string | null
 }) {
   const monday = getMondayOfWeek(new Date())
 
-  const days = Array.from({ length: numDays }, (_, i) => {
-    const dayNum = i + 1
-    const date = new Date(monday)
-    date.setDate(monday.getDate() + i)
-    const abbr = DAY_ABBR[date.getDay()]
-    const workout = workouts.find(w => w.day_number === dayNum)
-    const isRest = !workout
-    const isToday = dayNum === nextDayNumber
-    const isDone = completedSessions.some(s => s.workout_id === workout?.id)
-    return { dayNum, abbr, isRest, isToday, isDone }
-  })
-
   return (
     <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-      {days.map(({ dayNum, abbr, isRest, isToday, isDone }) => (
-        <div
-          key={dayNum}
-          className="flex flex-col items-center justify-between rounded-xl border px-2 py-3 flex-shrink-0 w-[60px] min-h-[80px]"
-          style={{
-            borderColor: isDone ? '#22c55e40' : isToday ? '#C9A84C40' : '#2C2C2E',
-            background: isDone ? 'rgba(34,197,94,0.05)' : isToday ? 'rgba(201,168,76,0.08)' : '#1C1C1E',
-            opacity: isRest ? 0.4 : 1,
-          }}
-        >
-          <span
-            className="font-bebas text-lg leading-none"
-            style={{ color: isToday ? '#C9A84C' : isDone ? '#22c55e' : 'rgba(255,255,255,0.4)' }}
-          >
-            {dayNum}
-          </span>
-          <span className="font-barlow text-[10px] text-white/30">{abbr}</span>
+      {workouts.map((w, i) => {
+        const date = new Date(monday)
+        date.setDate(monday.getDate() + i)
+        const abbr = DAY_ABBR[date.getDay()]
+        const isDone = completedSessions.some(s => s.workout_id === w.id)
+        const isSuggested = w.id === suggestedId
 
-          {/* Status indicator */}
-          <div className="w-5 h-5 rounded-full flex items-center justify-center"
+        return (
+          <div
+            key={w.id}
+            className="flex flex-col items-center justify-between rounded-xl border px-2 py-3 flex-shrink-0 w-[60px] min-h-[80px]"
             style={{
-              border: `1.5px solid ${isDone ? '#22c55e' : isToday ? '#C9A84C' : '#3A3A3C'}`,
-              background: isDone ? 'rgba(34,197,94,0.15)' : 'transparent',
+              borderColor: isDone ? '#22c55e40' : isSuggested ? '#C9A84C40' : '#2C2C2E',
+              background: isDone ? 'rgba(34,197,94,0.05)' : isSuggested ? 'rgba(201,168,76,0.08)' : '#1C1C1E',
             }}
           >
-            {isDone && (
-              <svg className="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-            {isToday && !isDone && (
-              <svg className="w-2.5 h-2.5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            )}
-            {isRest && (
-              <span className="font-barlow text-[8px] text-white/20">R</span>
-            )}
+            <span
+              className="font-bebas text-lg leading-none"
+              style={{ color: isSuggested ? '#C9A84C' : isDone ? '#22c55e' : 'rgba(255,255,255,0.4)' }}
+            >
+              {w.day_number}
+            </span>
+            <span className="font-barlow text-[10px] text-white/30">{abbr}</span>
+
+            <div className="w-5 h-5 rounded-full flex items-center justify-center"
+              style={{
+                border: `1.5px solid ${isDone ? '#22c55e' : isSuggested ? '#C9A84C' : '#3A3A3C'}`,
+                background: isDone ? 'rgba(34,197,94,0.15)' : 'transparent',
+              }}
+            >
+              {isDone && (
+                <svg className="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+              {isSuggested && !isDone && (
+                <svg className="w-2.5 h-2.5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
