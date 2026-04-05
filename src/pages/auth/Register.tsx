@@ -69,8 +69,8 @@ export default function Register() {
       <div className="relative z-10 flex flex-col min-h-screen p-8 max-w-sm mx-auto w-full">
         {/* Logo */}
         <div className="mt-12">
-          <h1 className="font-bebas text-4xl text-[#C9A84C] tracking-wide">DeMelo</h1>
-          <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mt-1">Fitness Platform</p>
+          <h1 className="font-bebas text-4xl text-[#C9A84C] tracking-wide">Z6</h1>
+          <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mt-1">Training Platform</p>
         </div>
 
         {/* Headline */}

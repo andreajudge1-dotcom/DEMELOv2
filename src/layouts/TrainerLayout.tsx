@@ -29,7 +29,7 @@ export default function TrainerLayout() {
       <aside className="w-64 bg-[#1C1C1E] min-h-screen flex flex-col fixed left-0 top-0 bottom-0">
         {/* Logo */}
         <div className="p-6 border-b border-[#2C2C2E]">
-          <h1 className="font-bebas text-2xl text-[#C9A84C] tracking-wide">DeMelo</h1>
+          <h1 className="font-bebas text-2xl text-[#C9A84C] tracking-wide">Z6</h1>
           <p className="font-barlow text-xs text-white/40 uppercase tracking-widest mt-0.5">Trainer Portal</p>
         </div>
 
