@@ -126,12 +126,6 @@ export default function TrainerSession() {
     setSession(sessionData)
     startedAtRef.current = sessionData.started_at
 
-    if (sessionData.status === 'completed') {
-      setCompleted(true)
-      setLoading(false)
-      return
-    }
-
     // Load client name
     const { data: clientRow } = await supabase
       .from('clients')
@@ -153,7 +147,22 @@ export default function TrainerSession() {
       }
     }
 
-    // Load or create session exercises
+    if (sessionData.status === 'completed') {
+      // Load exercise data for summary display
+      const { data: existingExercises } = await supabase
+        .from('session_exercises')
+        .select('id, exercise_id, order_index, exercises(name)')
+        .eq('session_id', sessionId)
+        .order('order_index')
+      if (existingExercises && existingExercises.length > 0) {
+        await buildExerciseCards(existingExercises as any[])
+      }
+      setCompleted(true)
+      setLoading(false)
+      return
+    }
+
+    // Load or create session exercises for active session
     const { data: existingExercises } = await supabase
       .from('session_exercises')
       .select('id, exercise_id, order_index, exercises(name)')

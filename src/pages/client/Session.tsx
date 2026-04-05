@@ -128,12 +128,6 @@ export default function ClientSession() {
     setSession(sessionData)
     startedAtRef.current = sessionData.started_at
 
-    if (sessionData.status === 'completed') {
-      setCompleted(true)
-      setLoading(false)
-      return
-    }
-
     if (sessionData.workout_id) {
       const { data: workout } = await supabase
         .from('workouts')
@@ -143,7 +137,22 @@ export default function ClientSession() {
       setDayName(workout?.name ?? 'Training')
     }
 
-    // Load or seed exercises
+    if (sessionData.status === 'completed') {
+      // Load exercise data for summary display
+      const { data: existing } = await supabase
+        .from('session_exercises')
+        .select('id, exercise_id, order_index, skipped, skip_note, exercises(name, primary_muscle)')
+        .eq('session_id', sessionId)
+        .order('order_index')
+      if (existing && existing.length > 0) {
+        await buildCards(existing as any[])
+      }
+      setCompleted(true)
+      setLoading(false)
+      return
+    }
+
+    // Load or seed exercises for active session
     const { data: existing } = await supabase
       .from('session_exercises')
       .select('id, exercise_id, order_index, skipped, skip_note, exercises(name, primary_muscle)')
