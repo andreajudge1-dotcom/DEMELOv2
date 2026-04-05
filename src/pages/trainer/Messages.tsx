@@ -116,7 +116,8 @@ function BroadcastModal({
     const { error: insertErr } = await supabase.from('messages').insert(rows)
 
     if (insertErr) {
-      setError('Failed to send. Please try again.')
+      console.error('Broadcast insert error:', insertErr.message, insertErr.details, insertErr.hint)
+      setError(`Failed to send: ${insertErr.message}`)
       setSending(false)
       return
     }
