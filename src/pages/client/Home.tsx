@@ -535,13 +535,13 @@ export default function ClientHome() {
           )}
         </div>
 
-        {/* Do a different day */}
+        {/* Swap day */}
         {!todayCompleted && suggestedWorkout && (
           <button
             onClick={() => setShowDayPicker(true)}
             className="w-full mb-4 font-barlow text-xs text-white/30 hover:text-[#C9A84C] transition-colors"
           >
-            Do a different day
+            Swap Day
           </button>
         )}
 

@@ -250,6 +250,11 @@ export default function ClientProgram() {
     <div className="min-h-screen bg-[#0A0A0A] pb-24">
       <div className="max-w-[390px] mx-auto px-4 pt-8">
 
+        {/* Back button */}
+        <button onClick={() => navigate('/client/home')} className="font-barlow text-sm text-white/30 hover:text-white mb-4 transition-colors">
+          ← Home
+        </button>
+
         {/* ── Header ── */}
         <div className="flex items-start justify-between mb-5">
           <div>
