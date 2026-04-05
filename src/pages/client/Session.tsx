@@ -420,7 +420,7 @@ export default function ClientSession() {
           averageRpe={session.average_rpe}
           prescribedRpeAvg={prescribedRpeAvg}
           prs={prs}
-          onDone={() => navigate('/client/home')}
+          onDone={() => navigate(-1)}
         />
       </div>
     )
