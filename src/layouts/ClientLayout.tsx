@@ -87,20 +87,20 @@ function ClientLayoutInner() {
       {/* Top header with photo banner */}
       <header className="fixed top-0 left-0 right-0 z-50">
         {/* Photo banner */}
-        <div className="h-12 relative overflow-hidden">
+        <div className="h-24 relative overflow-hidden">
           <div
             className="absolute inset-0"
             style={{
               backgroundImage: 'url(https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=60)',
               backgroundSize: 'cover',
               backgroundPosition: 'center 40%',
-              opacity: 0.15,
+              opacity: 0.35,
             }}
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0A0A0A]/50 to-[#0A0A0A]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#0A0A0A]/60 to-[#0A0A0A]" />
         </div>
         {/* User strip */}
-        <div className="bg-[#0A0A0A] border-b border-[#2C2C2E]">
+        <div className="bg-[#0A0A0A]/95 backdrop-blur-sm border-b border-[#2C2C2E]">
           <div className="max-w-[390px] mx-auto flex items-center justify-between px-4 py-2">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
@@ -118,7 +118,7 @@ function ClientLayoutInner() {
         </div>
       </header>
 
-      <main className="pt-[80px] pb-[64px]">
+      <main className="pt-[128px] pb-[64px]">
         <Outlet />
       </main>
 
