@@ -71,14 +71,14 @@ export default function Vault() {
       .upload(path, file, { upsert: true })
 
     if (uploadErr) {
-      console.error('Upload error:', uploadErr)
+      setParseError(`Upload failed: ${uploadErr.message}`)
       setUploading(false)
       return
     }
 
     const { data: urlData } = supabase.storage.from('vault').getPublicUrl(path)
 
-    await supabase.from('vault_documents').insert({
+    const { error: insertErr } = await supabase.from('vault_documents').insert({
       client_id: null,
       trainer_id: profile.id,
       name: file.name,
@@ -88,6 +88,12 @@ export default function Vault() {
       file_size: file.size,
       is_shared: false,
     })
+
+    if (insertErr) {
+      setParseError(`Save failed: ${insertErr.message}`)
+      setUploading(false)
+      return
+    }
 
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
