@@ -111,6 +111,10 @@ export default function CheckIn() {
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null)
   const [checkIns, setCheckIns] = useState<CheckInRecord[]>([])
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [showCompare, setShowCompare] = useState(false)
+  const [compareLeft, setCompareLeft] = useState<string>('')
+  const [compareRight, setCompareRight] = useState<string>('')
+  const [compareAngle, setCompareAngle] = useState<PhotoAngle>('front')
 
   // Form state — always starts blank
   const [sleep, setSleep] = useState<number | null>(null)
@@ -403,6 +407,26 @@ export default function CheckIn() {
   // STATE 1 — HISTORY VIEW (default)
   // ─────────────────────────────────────────────────────────────────────────
 
+  const checkInsWithPhotos = checkIns.filter(ci => ci.photo_front_url || ci.photo_side_left_url || ci.photo_side_right_url || ci.photo_back_url)
+  const canCompare = checkInsWithPhotos.length >= 2
+
+  function getPhotoUrl(ci: CheckInRecord, angle: PhotoAngle): string | null {
+    if (angle === 'front') return ci.photo_front_url
+    if (angle === 'side_left') return ci.photo_side_left_url
+    if (angle === 'side_right') return ci.photo_side_right_url
+    return ci.photo_back_url
+  }
+
+  function openCompare() {
+    setCompareLeft(checkInsWithPhotos[0]?.id ?? '')
+    setCompareRight(checkInsWithPhotos[1]?.id ?? '')
+    setCompareAngle('front')
+    setShowCompare(true)
+  }
+
+  const leftCI = checkIns.find(c => c.id === compareLeft)
+  const rightCI = checkIns.find(c => c.id === compareRight)
+
   return (
     <div className="min-h-screen bg-[#0A0A0A] pb-28">
       {/* Lightbox */}
@@ -413,16 +437,111 @@ export default function CheckIn() {
         </div>
       )}
 
+      {/* Compare modal */}
+      {showCompare && (
+        <div className="fixed inset-0 bg-[#0A0A0A] z-50 flex flex-col overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 pt-8 pb-4 border-b border-[#2C2C2E] flex-shrink-0">
+            <h2 className="font-bebas text-2xl text-white tracking-wide">Compare Photos</h2>
+            <button onClick={() => setShowCompare(false)} className="text-white/40 hover:text-white text-2xl">×</button>
+          </div>
+
+          <div className="flex-1 px-4 py-4">
+            {/* Selectors */}
+            <div className="flex gap-3 mb-4">
+              <div className="flex-1">
+                <p className="font-barlow text-[10px] text-white/30 uppercase tracking-wider mb-1">Left</p>
+                <select
+                  value={compareLeft}
+                  onChange={e => setCompareLeft(e.target.value)}
+                  className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-xs text-white outline-none"
+                >
+                  {checkInsWithPhotos.map(ci => (
+                    <option key={ci.id} value={ci.id}>
+                      {getWeekRange(ci.week_start)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
+                <p className="font-barlow text-[10px] text-white/30 uppercase tracking-wider mb-1">Right</p>
+                <select
+                  value={compareRight}
+                  onChange={e => setCompareRight(e.target.value)}
+                  className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-xs text-white outline-none"
+                >
+                  {checkInsWithPhotos.map(ci => (
+                    <option key={ci.id} value={ci.id}>
+                      {getWeekRange(ci.week_start)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Angle selector */}
+            <div className="flex gap-2 mb-5">
+              {PHOTO_ANGLES.map(angle => (
+                <button
+                  key={angle}
+                  onClick={() => setCompareAngle(angle)}
+                  className={`flex-1 py-2 rounded-lg font-barlow text-xs font-semibold transition-colors ${
+                    compareAngle === angle
+                      ? 'bg-[#C9A84C] text-black'
+                      : 'bg-[#2C2C2E] text-white/50 hover:text-white'
+                  }`}
+                >
+                  {ANGLE_LABELS[angle]}
+                </button>
+              ))}
+            </div>
+
+            {/* Photos side by side */}
+            <div className="flex gap-3">
+              {[leftCI, rightCI].map((ci, idx) => {
+                const url = ci ? getPhotoUrl(ci, compareAngle) : null
+                return (
+                  <div key={idx} className="flex-1">
+                    {url ? (
+                      <img src={url} alt={ANGLE_LABELS[compareAngle]} className="w-full aspect-[3/4] object-cover rounded-xl" />
+                    ) : (
+                      <div className="w-full aspect-[3/4] bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl flex items-center justify-center">
+                        <p className="font-barlow text-xs text-white/20 text-center px-2">No photo for this angle</p>
+                      </div>
+                    )}
+                    {ci && (
+                      <p className="font-barlow text-xs text-white/30 text-center mt-2">
+                        {ci.created_at ? fmtDateFull(ci.created_at) : fmtDate(ci.week_start)}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-[390px] mx-auto px-4 pt-8">
         <h1 className="font-bebas text-3xl text-white tracking-wide mb-4">Check-Ins</h1>
 
-        {/* New Check-In button */}
-        <button
-          onClick={startNewCheckIn}
-          className="w-full bg-[#C9A84C] text-black font-bebas text-lg tracking-widest rounded-2xl py-3.5 hover:bg-[#E2C070] transition-colors mb-6 min-h-[50px]"
-        >
-          New Check-In
-        </button>
+        {/* Action buttons */}
+        <div className={`flex gap-3 mb-6 ${canCompare ? '' : ''}`}>
+          <button
+            onClick={startNewCheckIn}
+            className={`bg-[#C9A84C] text-black font-bebas text-lg tracking-widest rounded-2xl py-3.5 hover:bg-[#E2C070] transition-colors min-h-[50px] ${canCompare ? 'flex-1' : 'w-full'}`}
+          >
+            New Check-In
+          </button>
+          {canCompare && (
+            <button
+              onClick={openCompare}
+              className="flex-1 bg-[#1C1C1E] border border-[#C9A84C]/40 text-[#C9A84C] font-bebas text-lg tracking-widest rounded-2xl py-3.5 hover:bg-[#C9A84C]/5 transition-colors min-h-[50px]"
+            >
+              Compare
+            </button>
+          )}
+        </div>
 
         {/* Check-in history */}
         {checkIns.length === 0 ? (
