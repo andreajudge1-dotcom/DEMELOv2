@@ -11,6 +11,8 @@ interface ProgramInfo {
   name: string
   num_days: number
   num_weeks: number
+  cover_photo_url: string | null
+  tags: string[] | null
 }
 
 interface Workout {
@@ -90,6 +92,7 @@ export default function ClientProgram() {
   const [completedSessions, setCompletedSessions] = useState<CompletedSession[]>([])
   const [nextDayNumber, setNextDayNumber] = useState(1)
   const [startingSession, setStartingSession] = useState(false)
+  const [showDetail, setShowDetail] = useState(!!dayParam)
 
   useEffect(() => {
     if (profile?.id) loadProgram(profile.id)
@@ -109,7 +112,7 @@ export default function ClientProgram() {
 
     const { data: assignRow } = await supabase
       .from('client_cycle_assignments')
-      .select('id, cycle_id, next_day_number, training_cycles(name, num_days, num_weeks)')
+      .select('id, cycle_id, next_day_number, training_cycles(name, num_days, num_weeks, cover_photo_url, tags)')
       .eq('client_id', clientRow.id)
       .eq('is_active', true)
       .maybeSingle()
@@ -118,7 +121,7 @@ export default function ClientProgram() {
     const tc = assignRow.training_cycles as any
     const numDays = tc.num_days ?? 4
     const numWeeks = tc.num_weeks ?? 4
-    setProgramInfo({ name: tc.name, num_days: numDays, num_weeks: numWeeks })
+    setProgramInfo({ name: tc.name, num_days: numDays, num_weeks: numWeeks, cover_photo_url: tc.cover_photo_url ?? null, tags: tc.tags ?? null })
     setCycleId(assignRow.cycle_id)
     setNextDayNumber(assignRow.next_day_number)
 
@@ -244,13 +247,82 @@ export default function ClientProgram() {
     )
   }
 
+  const defaultCover = 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80'
+  const coverUrl = programInfo.cover_photo_url || defaultCover
+
+  // ── CARD VIEW (default) ──
+  if (!showDetail) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] pb-24">
+        <div className="max-w-[390px] mx-auto px-4 pt-8">
+          <h1 className="font-bebas text-3xl text-white tracking-wide mb-5">Your Program</h1>
+
+          {/* Program card */}
+          <button
+            onClick={() => setShowDetail(true)}
+            className="w-full bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] overflow-hidden text-left hover:border-[#3A3A3C] transition-colors group"
+          >
+            {/* Cover image */}
+            <div
+              className="h-44 bg-cover bg-center relative"
+              style={{ backgroundImage: `url(${coverUrl})` }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-t from-[#1C1C1E] via-[#1C1C1E]/30 to-transparent" />
+            </div>
+
+            {/* Info */}
+            <div className="px-5 pb-5 -mt-2 relative">
+              <h2 className="font-bebas text-2xl text-white tracking-wide group-hover:text-[#C9A84C] transition-colors">{programInfo.name}</h2>
+              <p className="font-barlow text-xs text-white/40 mt-1">
+                {programInfo.num_days}d/week · {programInfo.num_weeks} weeks · Week {suggestedWeek}
+              </p>
+              {programInfo.tags && programInfo.tags.length > 0 && (
+                <div className="flex gap-1.5 mt-2 flex-wrap">
+                  {programInfo.tags.map(tag => (
+                    <span key={tag} className="font-barlow text-[10px] px-2 py-0.5 rounded-full bg-[#C9A84C]/10 text-[#C9A84C]">{tag}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* Workout day previews */}
+              <div className="mt-4 flex flex-col gap-1.5">
+                {workouts.slice(0, 3).map(w => {
+                  const done = completedWorkoutIds.has(w.id)
+                  return (
+                    <div key={w.id} className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bebas flex-shrink-0 ${
+                        done ? 'bg-green-500/20 text-green-400' : 'bg-[#2C2C2E] text-white/40'
+                      }`}>
+                        {done ? '✓' : w.day_number}
+                      </div>
+                      <span className="font-barlow text-xs text-white/50 truncate">{w.name}</span>
+                    </div>
+                  )
+                })}
+                {workouts.length > 3 && (
+                  <p className="font-barlow text-xs text-white/25 pl-7">+ {workouts.length - 3} more days</p>
+                )}
+              </div>
+
+              <div className="mt-4 flex items-center justify-center gap-2 text-[#C9A84C]">
+                <span className="font-barlow text-sm">View Program</span>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── DETAIL VIEW ──
   return (
     <div className="min-h-screen bg-[#0A0A0A] pb-24">
       <div className="max-w-[390px] mx-auto px-4 pt-8">
 
         {/* Back button */}
-        <button onClick={() => navigate('/client/home')} className="font-barlow text-sm text-white/30 hover:text-white mb-4 transition-colors">
-          ← Home
+        <button onClick={() => setShowDetail(false)} className="font-barlow text-sm text-white/30 hover:text-white mb-4 transition-colors">
+          ← Back
         </button>
 
         {/* ── Header ── */}
