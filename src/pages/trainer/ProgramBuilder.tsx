@@ -340,12 +340,25 @@ export default function ProgramBuilder() {
 
       const workoutFocus = day.is_rest_day ? 'rest_day' : (day.focus || null)
       if (!workoutId) {
-        const { data: workoutData } = await supabase
+        // Check if a workout already exists for this day_number to prevent duplicates
+        const { data: existing } = await supabase
           .from('workouts')
-          .insert({ cycle_id: programId, day_number: day.day_number, name: day.name, focus: workoutFocus })
-          .select()
-          .single()
-        workoutId = workoutData?.id ?? null
+          .select('id')
+          .eq('cycle_id', programId)
+          .eq('day_number', day.day_number)
+          .maybeSingle()
+
+        if (existing) {
+          workoutId = existing.id
+          await supabase.from('workouts').update({ name: day.name, focus: workoutFocus }).eq('id', workoutId)
+        } else {
+          const { data: workoutData } = await supabase
+            .from('workouts')
+            .insert({ cycle_id: programId, day_number: day.day_number, name: day.name, focus: workoutFocus })
+            .select()
+            .single()
+          workoutId = workoutData?.id ?? null
+        }
       } else {
         await supabase.from('workouts').update({ name: day.name, focus: workoutFocus }).eq('id', workoutId)
       }
