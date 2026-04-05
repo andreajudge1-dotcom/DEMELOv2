@@ -84,33 +84,47 @@ function ClientLayoutInner() {
 
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
-      <main className="pb-[112px]">
-        <Outlet />
-      </main>
-
-      {/* Bottom nav — mirrors trainer sidebar bottom section */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[#1C1C1E] border-t border-[#2C2C2E] z-50">
-        <div className="max-w-[390px] mx-auto">
-
-          {/* User strip */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-[#2C2C2E]">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
-                <span className="font-bebas text-sm text-[#C9A84C]">{avatarInitial}</span>
+      {/* Top header with photo banner */}
+      <header className="fixed top-0 left-0 right-0 z-50">
+        {/* Photo banner */}
+        <div className="h-12 relative overflow-hidden">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: 'url(https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=60)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center 40%',
+              opacity: 0.15,
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0A0A0A]/50 to-[#0A0A0A]" />
+        </div>
+        {/* User strip */}
+        <div className="bg-[#0A0A0A] border-b border-[#2C2C2E]">
+          <div className="max-w-[390px] mx-auto flex items-center justify-between px-4 py-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
+                <span className="font-bebas text-xs text-[#C9A84C]">{avatarInitial}</span>
               </div>
-              <div>
-                <p className="font-barlow text-sm text-white font-medium leading-tight">{firstName}</p>
-                <p className="font-barlow text-xs text-white/40 leading-tight">Athlete</p>
-              </div>
+              <p className="font-barlow text-sm text-white font-medium">{firstName}</p>
             </div>
             <button
               onClick={handleSignOut}
-              className="font-barlow text-sm text-white/50 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-[#2C2C2E]"
+              className="font-barlow text-xs text-white/40 hover:text-white transition-colors"
             >
               Sign out
             </button>
           </div>
+        </div>
+      </header>
 
+      <main className="pt-[80px] pb-[64px]">
+        <Outlet />
+      </main>
+
+      {/* Bottom nav */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-[#1C1C1E] border-t border-[#2C2C2E] z-50">
+        <div className="max-w-[390px] mx-auto">
           {/* Tab icons */}
           <div className="flex items-center justify-around px-2 py-2">
             {NAV_ITEMS.map(item => {
