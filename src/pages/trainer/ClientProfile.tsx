@@ -1102,10 +1102,8 @@ function ProgramTab({
       const { error: assignErr } = await supabase.from('client_cycle_assignments').insert({
         client_id: clientId,
         cycle_id: newCycle.id,
-        trainer_id: trainerId,
         is_active: true,
         next_day_number: 1,
-        started_at: new Date().toISOString(),
       })
       if (assignErr) throw new Error(assignErr.message)
 

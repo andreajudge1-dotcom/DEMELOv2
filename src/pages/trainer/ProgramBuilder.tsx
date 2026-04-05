@@ -409,10 +409,8 @@ export default function ProgramBuilder() {
           await supabase.from('client_cycle_assignments').insert({
             client_id: form.assignToClientId,
             cycle_id: clientCopy.id,
-            trainer_id: profile?.id,
             is_active: true,
             next_day_number: 1,
-            started_at: new Date().toISOString(),
           })
         }
       }

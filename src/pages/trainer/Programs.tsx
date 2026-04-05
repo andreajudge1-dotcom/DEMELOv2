@@ -230,10 +230,8 @@ export default function Programs() {
     const { error: assignErr } = await supabase.from('client_cycle_assignments').insert({
       client_id: assignClientId,
       cycle_id: newCycleId,
-      trainer_id: profile.id,
       is_active: true,
       next_day_number: 1,
-      started_at: new Date().toISOString(),
     })
 
     if (assignErr) {
