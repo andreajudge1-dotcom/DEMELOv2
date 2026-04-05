@@ -76,8 +76,6 @@ function getSundayOfWeek(date: Date): Date {
   return sunday
 }
 
-const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,7 +94,7 @@ export default function ClientHome() {
   const [completedSessions, setCompletedSessions] = useState<Session[]>([])
   const [currentWeek, setCurrentWeek] = useState(1)
   const [startingSession, setStartingSession] = useState(false)
-  const [dayExerciseCounts, setDayExerciseCounts] = useState<Record<string, number>>({})
+  const [dayExerciseNames, setDayExerciseNames] = useState<Record<string, string[]>>({})
   const [showDayPicker, setShowDayPicker] = useState(false)
   const [showExtraSheet, setShowExtraSheet] = useState(false)
   const [extraType, setExtraType] = useState<string | null>(null)
@@ -149,17 +147,21 @@ export default function ClientHome() {
       .order('day_number')
     setWorkouts(workoutRows ?? [])
 
-    // Exercise counts per workout
+    // Exercise counts + names per workout
     if (workoutRows && workoutRows.length > 0) {
       const ids = workoutRows.map(w => w.id)
       const { data: weData } = await supabase
         .from('workout_exercises')
-        .select('workout_id')
+        .select('workout_id, exercises(name)')
         .in('workout_id', ids)
+        .order('position')
       if (weData) {
-        const counts: Record<string, number> = {}
-        weData.forEach(row => { counts[row.workout_id] = (counts[row.workout_id] ?? 0) + 1 })
-        setDayExerciseCounts(counts)
+        const names: Record<string, string[]> = {}
+        weData.forEach((row: any) => {
+          if (!names[row.workout_id]) names[row.workout_id] = []
+          if (row.exercises?.name) names[row.workout_id].push(row.exercises.name)
+        })
+        setDayExerciseNames(names)
       }
     }
 
@@ -407,9 +409,6 @@ export default function ClientHome() {
               Recovery is part of the program. Rest up — you have earned it.
             </p>
           </div>
-
-          {/* Week strip */}
-          <WeekStrip workouts={workouts} completedSessions={completedSessions} suggestedId={null} />
         </div>
       </div>
     )
@@ -535,18 +534,15 @@ export default function ClientHome() {
           )}
         </div>
 
-        {/* Swap day */}
+        {/* Choose a Different Day */}
         {!todayCompleted && suggestedWorkout && (
           <button
             onClick={() => setShowDayPicker(true)}
-            className="w-full mb-4 font-barlow text-xs text-white/30 hover:text-[#C9A84C] transition-colors"
+            className="w-full mb-4 bg-[#1C1C1E] border border-[#C9A84C]/40 rounded-xl font-barlow text-sm text-[#C9A84C] hover:bg-[#C9A84C]/10 transition-colors min-h-[44px]"
           >
-            Swap Day
+            Choose a Different Day
           </button>
         )}
-
-        {/* ── This week strip ── */}
-        <WeekStrip workouts={workouts} completedSessions={completedSessions} suggestedId={suggestedWorkout?.id ?? null} />
 
         {/* ── Extra workout ── */}
         <button
@@ -559,18 +555,21 @@ export default function ClientHome() {
 
       {/* ── Day picker bottom sheet ── */}
       {showDayPicker && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center">
-          <div className="bg-[#1C1C1E] rounded-t-2xl border-t border-[#2C2C2E] w-full max-w-[500px] max-h-[60vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#2C2C2E]">
-              <h2 className="font-bebas text-lg text-white tracking-wide">Choose a Day</h2>
-              <button onClick={() => setShowDayPicker(false)} className="text-white/40 hover:text-white text-lg">×</button>
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center" onClick={() => setShowDayPicker(false)}>
+          <div className="bg-[#1C1C1E] rounded-t-2xl border-t border-[#2C2C2E] w-full max-w-[500px] flex flex-col" style={{ maxHeight: '75vh' }} onClick={e => e.stopPropagation()}>
+            {/* Fixed header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-[#2C2C2E] flex-shrink-0">
+              <h2 className="font-bebas text-xl text-white tracking-wide">Choose a Day</h2>
+              <button onClick={() => setShowDayPicker(false)} className="text-white/40 hover:text-white text-xl leading-none">×</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+
+            {/* Scrollable day list */}
+            <div className="overflow-y-auto p-4 flex flex-col gap-3">
               {workouts.map(w => {
                 const isDone = completedSessions.some(s => s.workout_id === w.id)
                 const isToday = w.id === suggestedWorkout?.id
                 const isRest = w.focus === 'rest_day'
-                const count = dayExerciseCounts[w.id] ?? 0
+                const exerciseNames = dayExerciseNames[w.id] ?? []
                 const statusLabel = isDone ? 'Done' : isToday ? 'Today' : isRest ? 'Rest' : 'Available'
                 const statusColor = isDone ? 'text-green-400 bg-green-500/15' : isToday ? 'text-[#C9A84C] bg-[#C9A84C]/15' : 'text-white/30 bg-white/5'
 
@@ -580,30 +579,46 @@ export default function ClientHome() {
                     onClick={() => {
                       if (isRest) return
                       setShowDayPicker(false)
-                      navigate(`/client/program?day=${w.day_number}`)
+                      startSession(w)
                     }}
                     disabled={isRest}
-                    className={`flex items-center gap-3 p-3.5 rounded-xl text-left transition-colors border ${
+                    className={`rounded-xl text-left transition-colors border p-4 ${
                       isDone ? 'bg-green-500/5 border-green-500/20'
                         : isToday ? 'border-[#C9A84C]/30 bg-[#C9A84C]/5'
                         : isRest ? 'border-[#2C2C2E] bg-[#1C1C1E] opacity-40'
                         : 'border-[#2C2C2E] bg-[#2C2C2E] hover:bg-[#3A3A3C]'
                     }`}
                   >
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      isToday ? 'bg-[#C9A84C] text-black' : isDone ? 'bg-green-500/20 text-green-400' : 'bg-[#3A3A3C] text-white/50'
-                    }`}>
-                      <span className="font-bebas text-base">{isRest ? 'R' : w.day_number}</span>
+                    {/* Day heading row */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          isToday ? 'bg-[#C9A84C] text-black' : isDone ? 'bg-green-500/20 text-green-400' : 'bg-[#3A3A3C] text-white/50'
+                        }`}>
+                          <span className="font-bebas text-base">{isRest ? 'R' : w.day_number}</span>
+                        </div>
+                        <p className="font-barlow text-sm font-semibold text-white">{w.name}</p>
+                      </div>
+                      <span className={`font-barlow text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full flex-shrink-0 ${statusColor}`}>
+                        {statusLabel}
+                      </span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-barlow text-sm text-white truncate">{w.name}</p>
-                      <p className="font-barlow text-xs text-white/30 mt-0.5">
-                        {isRest ? 'Recovery day' : `${count} exercise${count !== 1 ? 's' : ''}`}
-                      </p>
-                    </div>
-                    <span className={`font-barlow text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full flex-shrink-0 ${statusColor}`}>
-                      {statusLabel}
-                    </span>
+
+                    {/* Exercise preview */}
+                    {isRest ? (
+                      <p className="font-barlow text-xs text-white/25 pl-12">Rest Day</p>
+                    ) : exerciseNames.length > 0 ? (
+                      <div className="pl-12">
+                        {exerciseNames.slice(0, 3).map((name, i) => (
+                          <p key={i} className="font-barlow text-xs text-white/35 leading-relaxed">{name}</p>
+                        ))}
+                        {exerciseNames.length > 3 && (
+                          <p className="font-barlow text-xs text-white/20 mt-0.5">+ {exerciseNames.length - 3} more</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="font-barlow text-xs text-white/25 pl-12">No exercises</p>
+                    )}
                   </button>
                 )
               })}
@@ -664,67 +679,3 @@ export default function ClientHome() {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WEEK STRIP
-// ─────────────────────────────────────────────────────────────────────────────
-
-function WeekStrip({
-  workouts,
-  completedSessions,
-  suggestedId,
-}: {
-  workouts: Workout[]
-  completedSessions: Session[]
-  suggestedId: string | null
-}) {
-  const monday = getMondayOfWeek(new Date())
-
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-      {workouts.map((w, i) => {
-        const date = new Date(monday)
-        date.setDate(monday.getDate() + i)
-        const abbr = DAY_ABBR[date.getDay()]
-        const isDone = completedSessions.some(s => s.workout_id === w.id)
-        const isSuggested = w.id === suggestedId
-
-        return (
-          <div
-            key={w.id}
-            className="flex flex-col items-center justify-between rounded-xl border px-2 py-3 flex-shrink-0 w-[60px] min-h-[80px]"
-            style={{
-              borderColor: isDone ? '#22c55e40' : isSuggested ? '#C9A84C40' : '#2C2C2E',
-              background: isDone ? 'rgba(34,197,94,0.05)' : isSuggested ? 'rgba(201,168,76,0.08)' : '#1C1C1E',
-            }}
-          >
-            <span
-              className="font-bebas text-lg leading-none"
-              style={{ color: isSuggested ? '#C9A84C' : isDone ? '#22c55e' : 'rgba(255,255,255,0.4)' }}
-            >
-              {w.day_number}
-            </span>
-            <span className="font-barlow text-[10px] text-white/30">{abbr}</span>
-
-            <div className="w-5 h-5 rounded-full flex items-center justify-center"
-              style={{
-                border: `1.5px solid ${isDone ? '#22c55e' : isSuggested ? '#C9A84C' : '#3A3A3C'}`,
-                background: isDone ? 'rgba(34,197,94,0.15)' : 'transparent',
-              }}
-            >
-              {isDone && (
-                <svg className="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-              {isSuggested && !isDone && (
-                <svg className="w-2.5 h-2.5 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              )}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
