@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import ExercisePicker from '../../components/ExercisePicker'
@@ -61,9 +61,12 @@ function makeDefaultSet(num: number): SetPrescription {
 export default function ProgramBuilder() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const { id: editProgramId } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const preselectedClientId = searchParams.get('clientId')
+  const [importBanner, setImportBanner] = useState<string | null>(null)
+  const [unmatchedExercises, setUnmatchedExercises] = useState<Set<string>>(new Set())
 
   const [clients, setClients] = useState<Client[]>([])
   const clientLocked = !!preselectedClientId
@@ -103,6 +106,86 @@ export default function ProgramBuilder() {
       loadExistingProgram(editProgramId)
     }
   }, [editProgramId])
+
+  // Pre-fill from AI document parser
+  useEffect(() => {
+    const state = location.state as any
+    if (!state?.parsedProgram || editProgramId) return
+
+    const parsed = state.parsedProgram
+    const clientIdFromState = state.clientId ?? ''
+
+    setForm(prev => ({
+      ...prev,
+      name: parsed.program_name ?? prev.name,
+      numWeeks: parsed.weeks ?? prev.numWeeks,
+      numDays: parsed.days?.length ?? prev.numDays,
+      assignToClientId: clientIdFromState,
+    }))
+
+    // Build days from parsed data
+    async function prefill() {
+      // Fetch all exercises to match by name
+      const { data: allExercises } = await supabase
+        .from('exercises')
+        .select('id, name, is_unilateral, per_side')
+        .or(`is_global.eq.true,trainer_id.eq.${profile?.id}`)
+
+      const exerciseMap = new Map((allExercises ?? []).map(ex => [ex.name.toLowerCase(), ex]))
+      const unmatched = new Set<string>()
+
+      const importedDays: WorkoutDay[] = (parsed.days ?? []).map((day: any, idx: number) => {
+        const exercises: WorkoutExercise[] = (day.exercises ?? []).map((ex: any, exIdx: number) => {
+          const match = exerciseMap.get(ex.name?.toLowerCase())
+          if (!match) unmatched.add(ex.name)
+
+          const sets: SetPrescription[] = (ex.sets ?? []).map((s: any) => ({
+            set_number: s.set_number ?? 1,
+            set_type: s.set_type ?? 'working',
+            reps: s.reps_min && s.reps_max && s.reps_min !== s.reps_max
+              ? `${s.reps_min}-${s.reps_max}`
+              : String(s.reps_min ?? s.reps_max ?? ''),
+            rpe_target: null,
+            load_modifier: null,
+            hold_seconds: null,
+            tempo: '',
+            cue: s.special_instructions ?? '',
+          }))
+
+          return {
+            id: `import-${idx}-${exIdx}`,
+            exercise_id: match?.id ?? '',
+            exercise_name: ex.name ?? 'Unknown Exercise',
+            is_unilateral: match?.is_unilateral ?? false,
+            per_side: match?.per_side ?? false,
+            superset_group: ex.superset_with ?? null,
+            position: exIdx,
+            cue_override: ex.coaching_notes ?? '',
+            notes: '',
+            sets: sets.length > 0 ? sets : [makeDefaultSet(1), makeDefaultSet(2), makeDefaultSet(3)],
+          }
+        })
+
+        return {
+          id: null,
+          day_number: day.day_number ?? idx + 1,
+          name: day.day_name ?? `Day ${idx + 1}`,
+          focus: day.focus ?? '',
+          is_rest_day: false,
+          exercises,
+        }
+      })
+
+      setDays(importedDays)
+      setUnmatchedExercises(unmatched)
+      setImportBanner(`Imported from document`)
+      // Don't skip to builder — let trainer review setup first and save the cycle
+    }
+
+    prefill()
+    // Clear location state to prevent re-import on refresh
+    window.history.replaceState({}, document.title)
+  }, [location.state])
 
   async function fetchClients() {
     const { data } = await supabase
@@ -230,16 +313,18 @@ export default function ProgramBuilder() {
       return
     }
 
-    // Init empty days (client assigned on Finish)
-    const initialDays: WorkoutDay[] = Array.from({ length: form.numDays }, (_, i) => ({
-      id: null,
-      day_number: i + 1,
-      name: `Day ${i + 1}`,
-      focus: '',
-      is_rest_day: false,
-      exercises: [],
-    }))
-    setDays(initialDays)
+    // Use pre-filled days from import if available, else init empty
+    if (days.length === 0 || !importBanner) {
+      const initialDays: WorkoutDay[] = Array.from({ length: form.numDays }, (_, i) => ({
+        id: null,
+        day_number: i + 1,
+        name: `Day ${i + 1}`,
+        focus: '',
+        is_rest_day: false,
+        exercises: [],
+      }))
+      setDays(initialDays)
+    }
     setProgramId(data.id)
     setStep('builder')
     setSaving(false)
@@ -635,6 +720,17 @@ export default function ProgramBuilder() {
 
   return (
     <div className="max-w-6xl">
+      {/* Import banner */}
+      {importBanner && (
+        <div className="mb-4 bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-xl px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="font-barlow text-sm text-[#C9A84C] font-semibold">{importBanner}</p>
+            <p className="font-barlow text-xs text-[#C9A84C]/60 mt-0.5">Review each day and exercise before saving.{unmatchedExercises.size > 0 ? ` ${unmatchedExercises.size} exercise${unmatchedExercises.size > 1 ? 's' : ''} need manual review.` : ''}</p>
+          </div>
+          <button onClick={() => setImportBanner(null)} className="text-[#C9A84C]/40 hover:text-[#C9A84C] text-lg">×</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
@@ -833,7 +929,12 @@ export default function ProgramBuilder() {
                           <div className="w-6 h-6 rounded-full bg-[#C9A84C] flex items-center justify-center flex-shrink-0">
                             <span className="font-bebas text-xs text-black">{i + 1}</span>
                           </div>
-                          <p className="font-barlow text-sm font-semibold text-white flex-1">{ex.exercise_name}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-barlow text-sm font-semibold text-white">{ex.exercise_name}</p>
+                            {unmatchedExercises.has(ex.exercise_name) && (
+                              <p className="font-barlow text-[10px] text-yellow-400/80 mt-0.5">⚠ Exercise not found in library. Please review.</p>
+                            )}
+                          </div>
                           <button onClick={() => setSupersetPickerFor(i)} className="font-barlow text-xs text-[#C9A84C]/50 hover:text-[#C9A84C] transition-colors border border-[#C9A84C]/20 rounded-full px-2 py-0.5">+ Superset</button>
                           <button onClick={() => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.filter((_, ei) => ei !== i) } : d))} className="font-barlow text-xs text-white/20 hover:text-[#E05555]">Remove</button>
                         </div>
