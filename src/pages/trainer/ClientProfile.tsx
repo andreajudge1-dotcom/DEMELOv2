@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -164,8 +164,10 @@ export default function ClientProfile() {
   const { id: clientId } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { profile } = useAuth()
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab') as Tab | null
 
-  const [activeTab, setActiveTab] = useState<Tab>('Overview')
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam && TABS.includes(tabParam) ? tabParam : 'Overview')
   const [client, setClient] = useState<Client | null>(null)
   const [inviteSent, setInviteSent] = useState(false)
   const [assignment, setAssignment] = useState<Assignment | null>(null)
@@ -736,7 +738,7 @@ export default function ClientProfile() {
             <ProgressTab sessions={sessions} />
           )}
           {activeTab === 'Check-ins' && (
-            <CheckInsTab checkIns={checkIns} />
+            <CheckInsTab checkIns={checkIns} clientId={clientId!} onRefresh={loadAll} />
           )}
           {activeTab === 'Metrics' && (
             <MetricsTab
@@ -1622,17 +1624,32 @@ function ProgressTab({ sessions }: { sessions: Session[] }) {
 // Check-ins Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
+function CheckInsTab({ checkIns, clientId, onRefresh }: { checkIns: CheckIn[]; clientId: string; onRefresh: () => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [replyText, setReplyText] = useState<Record<string, string>>({})
   const [savingReply, setSavingReply] = useState<string | null>(null)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   async function saveReply(ciId: string) {
     const text = replyText[ciId]?.trim()
     if (!text) return
     setSavingReply(ciId)
     await supabase.from('check_ins').update({ coach_response: text }).eq('id', ciId)
+
+    // Notify client
+    const { data: clientRow } = await supabase.from('clients').select('profile_id').eq('id', clientId).single()
+    if (clientRow) {
+      await supabase.from('notifications').insert({
+        profile_id: clientRow.profile_id,
+        type: 'checkin_response',
+        title: 'Josh responded to your check-in',
+        read_at: null,
+      })
+    }
+
     setSavingReply(null)
+    setReplyText(prev => { const next = { ...prev }; delete next[ciId]; return next })
+    onRefresh()
   }
 
   if (checkIns.length === 0) {
@@ -1645,10 +1662,16 @@ function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setLightboxUrl(null)}>
+          <button onClick={() => setLightboxUrl(null)} className="absolute top-6 right-6 text-white/50 hover:text-white text-3xl">×</button>
+          <img src={lightboxUrl} alt="Progress" className="max-w-full max-h-[85vh] object-contain rounded-xl" />
+        </div>
+      )}
+
       {checkIns.map(ci => {
-        const scores = [ci.sleep_score, ci.nutrition_score, ci.fatigue_score, ci.soreness_score, ci.performance_score].filter((v): v is number => v !== null)
-        const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0
         const isOpen = expanded === ci.id
         const photos = [
           { label: 'Front', url: ci.photo_front_url },
@@ -1657,30 +1680,33 @@ function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
           { label: 'Back', url: ci.photo_back_url },
         ].filter(p => p.url)
 
+        const scoreItems = [
+          { label: 'Sleep', val: ci.sleep_score },
+          { label: 'Nutrition', val: ci.nutrition_score },
+          { label: 'Fatigue', val: ci.fatigue_score },
+          { label: 'Soreness', val: ci.soreness_score },
+          { label: 'Performance', val: ci.performance_score },
+        ]
+
         return (
           <div key={ci.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden">
+            {/* Header — always visible */}
             <button
               onClick={() => setExpanded(isOpen ? null : ci.id)}
               className="w-full px-5 py-4 flex items-center gap-4 text-left hover:bg-[#222] transition-colors"
             >
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="font-barlow font-semibold text-sm text-white">Week of {fmtDate(ci.week_start)}</p>
                 <p className="font-barlow text-xs text-white/40 mt-0.5">
-                  Avg: {avg.toFixed(1)}/5
-                  {ci.body_weight ? ` · ${ci.body_weight} lbs` : ''}
-                  {photos.length > 0 ? ` · ${photos.length} photo${photos.length > 1 ? 's' : ''}` : ''}
+                  {ci.body_weight ? `${ci.body_weight} lbs` : ''}
+                  {photos.length > 0 ? `${ci.body_weight ? ' · ' : ''}${photos.length} photos` : ''}
+                  {!ci.coach_response ? ' · Needs response' : ''}
                 </p>
               </div>
               <div className="flex gap-1">
-                {[
-                  { label: 'Slp', val: ci.sleep_score },
-                  { label: 'Nut', val: ci.nutrition_score },
-                  { label: 'Fat', val: ci.fatigue_score },
-                  { label: 'Srs', val: ci.soreness_score },
-                  { label: 'Prf', val: ci.performance_score },
-                ].map(({ label, val }) => (
+                {scoreItems.map(({ label, val }) => (
                   <div key={label} className="text-center">
-                    <div className={`w-7 h-7 rounded-md flex items-center justify-center font-bebas text-sm ${
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bebas text-sm ${
                       val === null ? 'bg-[#2C2C2E] text-white/25'
                       : val >= 4 ? 'bg-green-500/20 text-green-400'
                       : val === 3 ? 'bg-yellow-500/20 text-yellow-400'
@@ -1688,25 +1714,20 @@ function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
                     }`}>
                       {val ?? '—'}
                     </div>
-                    <p className="font-barlow text-white/30 mt-0.5" style={{ fontSize: 9 }}>{label}</p>
+                    <p className="font-barlow text-white/25 mt-0.5" style={{ fontSize: 8 }}>{label.slice(0, 3)}</p>
                   </div>
                 ))}
               </div>
               <span className="font-barlow text-xs text-white/25">{isOpen ? '▲' : '▼'}</span>
             </button>
 
+            {/* Expanded detail */}
             {isOpen && (
               <div className="border-t border-[#2C2C2E] px-5 py-4 bg-[#171717] flex flex-col gap-4">
 
-                {/* Scores */}
+                {/* Scores with bars */}
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                  {[
-                    { label: 'Sleep Quality', val: ci.sleep_score },
-                    { label: 'Nutrition', val: ci.nutrition_score },
-                    { label: 'Fatigue', val: ci.fatigue_score },
-                    { label: 'Soreness', val: ci.soreness_score },
-                    { label: 'Performance', val: ci.performance_score },
-                  ].map(({ label, val }) => (
+                  {scoreItems.map(({ label, val }) => (
                     <div key={label}>
                       <p className="font-barlow text-xs text-white/40 mb-1">{label}</p>
                       {scoreBar(val, 5)}
@@ -1728,51 +1749,67 @@ function CheckInsTab({ checkIns }: { checkIns: CheckIn[] }) {
                   </div>
                 )}
 
-                {/* Photos */}
+                {/* Photos — 80px tappable thumbnails */}
                 {photos.length > 0 && (
                   <div className="pt-3 border-t border-[#2C2C2E]">
                     <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Progress Photos</p>
                     <div className="flex gap-2">
                       {photos.map(p => (
-                        <div key={p.label} className="flex flex-col items-center gap-1">
-                          <img src={p.url!} alt={p.label} className="w-16 h-20 object-cover rounded-lg" />
+                        <button key={p.label} onClick={() => setLightboxUrl(p.url!)} className="flex flex-col items-center gap-1 group">
+                          <img src={p.url!} alt={p.label} className="w-20 h-20 object-cover rounded-lg group-hover:ring-2 ring-[#C9A84C]/50 transition-all" />
                           <span className="font-barlow text-[10px] text-white/30">{p.label}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Client notes */}
+                {/* Client notes — quote style */}
                 {ci.notes && (
                   <div className="pt-3 border-t border-[#2C2C2E]">
-                    <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-1">Client Notes</p>
-                    <p className="font-barlow text-sm text-white/70">{ci.notes}</p>
+                    <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-2">Client Notes</p>
+                    <div className="border-l-4 border-white/10 pl-3 py-1">
+                      <p className="font-barlow text-sm text-white/60 italic">{ci.notes}</p>
+                    </div>
                   </div>
                 )}
 
                 {/* Coach response */}
                 <div className="pt-3 border-t border-[#2C2C2E]">
-                  <p className="font-barlow text-xs text-[#C9A84C] uppercase tracking-wider mb-2">Coach Response</p>
-                  {ci.coach_response && !replyText[ci.id] ? (
-                    <div className="border-l-4 border-[#C9A84C] pl-3 py-1 mb-2">
-                      <p className="font-barlow text-sm text-white/70">{ci.coach_response}</p>
-                    </div>
-                  ) : null}
-                  <textarea
-                    value={replyText[ci.id] ?? ci.coach_response ?? ''}
-                    onChange={e => setReplyText(prev => ({ ...prev, [ci.id]: e.target.value }))}
-                    placeholder="Leave a note for your client..."
-                    rows={3}
-                    className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-3 py-2.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors resize-none"
-                  />
-                  <button
-                    onClick={() => saveReply(ci.id)}
-                    disabled={savingReply === ci.id || !replyText[ci.id]?.trim()}
-                    className="mt-2 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-4 py-2 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-40"
-                  >
-                    {savingReply === ci.id ? 'Saving...' : 'Send Response'}
-                  </button>
+                  {ci.coach_response && !(ci.id in replyText) ? (
+                    <>
+                      <p className="font-barlow text-xs text-[#C9A84C] uppercase tracking-wider mb-2">Your Response</p>
+                      <div className="border-l-4 border-[#C9A84C] bg-[#C9A84C]/5 pl-3 pr-3 py-2 rounded-r-lg mb-2">
+                        <p className="font-barlow text-sm text-white/70">{ci.coach_response}</p>
+                      </div>
+                      <button
+                        onClick={() => setReplyText(prev => ({ ...prev, [ci.id]: ci.coach_response ?? '' }))}
+                        className="font-barlow text-xs text-white/30 hover:text-[#C9A84C] transition-colors"
+                      >
+                        Edit response
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-barlow text-xs text-[#C9A84C] uppercase tracking-wider mb-2">
+                        {ci.coach_response ? 'Edit Response' : 'Write your response'}
+                      </p>
+                      <textarea
+                        value={replyText[ci.id] ?? ''}
+                        onChange={e => setReplyText(prev => ({ ...prev, [ci.id]: e.target.value }))}
+                        placeholder="Leave a note for your client..."
+                        rows={3}
+                        className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-3 py-2.5 font-barlow text-sm text-white placeholder-white/20 outline-none focus:border-[#C9A84C]/50 transition-colors resize-none"
+                      />
+                      <button
+                        onClick={() => saveReply(ci.id)}
+                        disabled={savingReply === ci.id || !replyText[ci.id]?.trim()}
+                        className="mt-2 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-5 py-2 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-40"
+                      >
+                        {savingReply === ci.id ? 'Saving...' : 'Send Response'}
+                      </button>
+                    </>
+                  )}
                 </div>
 
               </div>
