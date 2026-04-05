@@ -422,12 +422,21 @@ export default function ClientHome() {
           </div>
         </div>
 
-        {/* Program pill */}
-        <div className="mb-5 inline-flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#C9A84C]" />
-          <span className="font-barlow text-xs text-[#C9A84C]">
-            {programName} · Week {currentWeek} of {numWeeks}
-          </span>
+        {/* Program pill — tappable */}
+        <div className="mb-5 flex items-center gap-2 flex-wrap">
+          <div className="inline-flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-full px-3 py-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#C9A84C]" />
+            <span className="font-barlow text-xs text-[#C9A84C]">
+              {programName} · Week {currentWeek} of {numWeeks}
+            </span>
+          </div>
+          <button
+            onClick={() => navigate('/client/progress')}
+            className="inline-flex items-center gap-1.5 bg-[#2C2C2E] hover:bg-[#3A3A3C] border border-[#3A3A3C] rounded-full px-3 py-1.5 transition-colors"
+          >
+            <span className="font-barlow text-xs text-white/60">View program</span>
+            <svg className="w-3 h-3 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+          </button>
         </div>
 
         {/* ── Check-in banner ── */}
