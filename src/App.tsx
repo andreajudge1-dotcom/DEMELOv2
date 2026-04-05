@@ -23,6 +23,7 @@ import CheckIn from './pages/client/CheckIn'
 import TrainerSession from './pages/trainer/Session'
 import ClientSession from './pages/client/Session'
 import ClientProgram from './pages/client/Program'
+import ClientVault from './pages/client/Vault'
 
 function AppRoutes() {
   const { loading } = useAuth()
@@ -64,6 +65,7 @@ function AppRoutes() {
         <Route path="program" element={<ClientProgram />} />
         <Route path="progress" element={<Progress />} />
         <Route path="messages" element={<ClientMessages />} />
+        <Route path="vault" element={<ClientVault />} />
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
