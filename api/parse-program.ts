@@ -5,10 +5,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { documentText, documentName } = req.body ?? {}
-  if (!documentText) {
+  const { documentText: rawText, documentName } = req.body ?? {}
+  if (!rawText) {
     return res.status(400).json({ error: 'Missing documentText' })
   }
+
+  // Truncate to ~15k chars to leave room for the response within token limits
+  const documentText = rawText.length > 15000 ? rawText.substring(0, 15000) + '\n\n[Document truncated — parse what is shown above]' : rawText
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -25,8 +28,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8192,
-        system: 'You are a fitness program parser. Extract the complete training program structure from this document and return only valid JSON with no other text, markdown, or explanation.',
+        max_tokens: 16384,
+        system: 'You are a fitness program parser. Extract ONLY the weekly training schedule (Monday through Sunday workout days) from this document. Ignore nutrition plans, disclaimers, introductions, warm-up protocols, and any non-exercise content. Return only valid JSON with no other text, markdown, or explanation. Be concise — use short exercise names and minimal notes.',
         messages: [
           {
             role: 'user',
