@@ -25,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: 'You are a fitness program parser. Extract the complete training program structure from this document and return only valid JSON with no other text, markdown, or explanation.',
         messages: [
           {
@@ -76,6 +76,19 @@ ${documentText}`,
 
     const data = await response.json()
     const text = data.content?.[0]?.text ?? ''
+    const stopReason = data.stop_reason ?? 'unknown'
+
+    console.log('Claude response length:', text.length, 'stop_reason:', stopReason)
+    console.log('Claude response first 300 chars:', text.substring(0, 300))
+
+    // If the response was cut off, the JSON is incomplete
+    if (stopReason === 'max_tokens') {
+      return res.status(422).json({ error: 'AI response was truncated — document may be too complex. Try a simpler program document.' })
+    }
+
+    if (!text) {
+      return res.status(422).json({ error: 'AI returned empty response' })
+    }
 
     // Try to parse JSON from response — handle markdown, extra text, etc.
     let parsed
@@ -93,8 +106,10 @@ ${documentText}`,
       }
 
       parsed = JSON.parse(jsonStr)
-    } catch {
-      return res.status(422).json({ error: 'Failed to parse AI response as JSON', raw: text.substring(0, 500) })
+    } catch (parseErr: any) {
+      console.error('JSON parse failed:', parseErr.message)
+      console.error('Attempted to parse:', text.substring(0, 500))
+      return res.status(422).json({ error: `Failed to parse AI response: ${parseErr.message}. Response started with: ${text.substring(0, 100)}` })
     }
 
     return res.status(200).json(parsed)
