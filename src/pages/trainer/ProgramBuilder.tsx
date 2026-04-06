@@ -390,7 +390,10 @@ export default function ProgramBuilder() {
       for (const exercise of day.exercises) {
         let workoutExerciseId = exercise.id
 
-        if (!workoutExerciseId || workoutExerciseId.startsWith('local-')) {
+        // Treat local- (manually added) and import- (AI-imported) IDs as new rows needing insert
+        const needsInsert = !workoutExerciseId || workoutExerciseId.startsWith('local-') || workoutExerciseId.startsWith('import-')
+
+        if (needsInsert) {
           const { data: exData } = await supabase
             .from('workout_exercises')
             .insert({
