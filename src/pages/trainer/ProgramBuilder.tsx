@@ -135,9 +135,30 @@ export default function ProgramBuilder() {
       const unmatched = new Set<string>()
 
       const importedDays: WorkoutDay[] = (parsed.days ?? []).map((day: any, idx: number) => {
+        // Build superset groups — normalize exercise names into shared labels
+        const supersetLabels = new Map<string, string>()
+        let labelCounter = 0
+        const labelChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        for (const ex of (day.exercises ?? [])) {
+          if (ex.superset_with) {
+            const pairKey = [ex.name, ex.superset_with].sort().join('|||')
+            if (!supersetLabels.has(pairKey)) {
+              supersetLabels.set(pairKey, labelChars[labelCounter % 26])
+              labelCounter++
+            }
+          }
+        }
+
         const exercises: WorkoutExercise[] = (day.exercises ?? []).map((ex: any, exIdx: number) => {
           const match = exerciseMap.get(ex.name?.toLowerCase())
           if (!match) unmatched.add(ex.name)
+
+          // Resolve superset group label
+          let ssGroup: string | null = null
+          if (ex.superset_with) {
+            const pairKey = [ex.name, ex.superset_with].sort().join('|||')
+            ssGroup = supersetLabels.get(pairKey) ?? null
+          }
 
           const sets: SetPrescription[] = (ex.sets ?? []).map((s: any) => ({
             set_number: s.set_number ?? 1,
@@ -158,7 +179,7 @@ export default function ProgramBuilder() {
             exercise_name: ex.name ?? 'Unknown Exercise',
             is_unilateral: match?.is_unilateral ?? false,
             per_side: match?.per_side ?? false,
-            superset_group: ex.superset_with ?? null,
+            superset_group: ssGroup,
             position: exIdx,
             cue_override: ex.coaching_notes ?? '',
             notes: '',
