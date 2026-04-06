@@ -110,12 +110,14 @@ export default function ClientProgram() {
     setClientId(clientRow.id)
     setTrainerId(clientRow.trainer_id)
 
-    const { data: assignRow } = await supabase
+    const { data: assignRows } = await supabase
       .from('client_cycle_assignments')
       .select('id, cycle_id, next_day_number, training_cycles(name, num_days, num_weeks, cover_photo_url, tags)')
       .eq('client_id', clientRow.id)
       .eq('is_active', true)
-      .maybeSingle()
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const assignRow = assignRows?.[0] ?? null
     if (!assignRow || !(assignRow.training_cycles as any)?.name) { setLoading(false); return }
 
     const tc = assignRow.training_cycles as any
@@ -450,12 +452,21 @@ export default function ClientProgram() {
             {/* Bottom action */}
             <div className="mt-4 pt-4 border-t border-[#2C2C2E]">
               {isDayCompleted ? (
-                <button
-                  onClick={() => completedSessionId && navigate(`/client/session/${completedSessionId}`)}
-                  className="w-full font-barlow text-sm text-[#C9A84C] border border-[#C9A84C]/30 rounded-xl py-3 hover:bg-[#C9A84C]/5 transition-colors"
-                >
-                  View Session
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => completedSessionId && navigate(`/client/session/${completedSessionId}`)}
+                    className="flex-1 font-barlow text-sm text-[#C9A84C] border border-[#C9A84C]/30 rounded-xl py-3 hover:bg-[#C9A84C]/5 transition-colors"
+                  >
+                    View Session
+                  </button>
+                  <button
+                    onClick={() => startSessionForDay(selectedWorkout)}
+                    disabled={startingSession}
+                    className="flex-1 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+                  >
+                    {startingSession ? 'Starting...' : 'Start Again'}
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={() => startSessionForDay(selectedWorkout)}

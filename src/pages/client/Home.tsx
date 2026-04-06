@@ -126,12 +126,14 @@ export default function ClientHome() {
       .maybeSingle()
     setTrainer(trainerRow ?? null)
 
-    const { data: assignRow } = await supabase
+    const { data: assignRows } = await supabase
       .from('client_cycle_assignments')
       .select('id, cycle_id, next_day_number, training_cycles(name, num_days, num_weeks)')
       .eq('client_id', clientRow.id)
       .eq('is_active', true)
-      .maybeSingle()
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const assignRow = assignRows?.[0] ?? null
 
     if (!assignRow || !(assignRow.training_cycles as any)?.name) { setLoading(false); return }
     setProgram(assignRow as unknown as ProgramData)
@@ -470,13 +472,22 @@ export default function ClientHome() {
           </h2>
 
           {todayCompleted ? (
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
-                <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
+                  <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <span className="font-barlow text-sm text-green-400">Completed</span>
               </div>
-              <span className="font-barlow text-sm text-green-400">Completed</span>
+              <button
+                onClick={() => startSession()}
+                disabled={startingSession}
+                className="w-full bg-white/[0.03] backdrop-blur-sm border border-[#C9A84C]/30 rounded-xl font-barlow text-sm text-[#C9A84C] py-3 hover:bg-[#C9A84C]/10 transition-colors"
+              >
+                {startingSession ? 'Starting...' : 'Start Again'}
+              </button>
             </div>
           ) : (
             <>
