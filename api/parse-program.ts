@@ -77,14 +77,24 @@ ${documentText}`,
     const data = await response.json()
     const text = data.content?.[0]?.text ?? ''
 
-    // Try to parse JSON from response
+    // Try to parse JSON from response — handle markdown, extra text, etc.
     let parsed
     try {
-      // Handle potential markdown code blocks
-      const jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      // Strip markdown code blocks
+      let jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+
+      // If still not valid JSON, try to find JSON object in the text
+      if (!jsonStr.startsWith('{')) {
+        const firstBrace = jsonStr.indexOf('{')
+        const lastBrace = jsonStr.lastIndexOf('}')
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          jsonStr = jsonStr.substring(firstBrace, lastBrace + 1)
+        }
+      }
+
       parsed = JSON.parse(jsonStr)
     } catch {
-      return res.status(422).json({ error: 'Failed to parse AI response as JSON', raw: text })
+      return res.status(422).json({ error: 'Failed to parse AI response as JSON', raw: text.substring(0, 500) })
     }
 
     return res.status(200).json(parsed)
