@@ -106,6 +106,10 @@ export default function ClientSession() {
   const [skipForIndex, setSkipForIndex] = useState<number | null>(null)
   const [skipNote, setSkipNote] = useState('')
 
+  // Cancel-session confirm
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+
   // Rest timer
   const [restTimer, setRestTimer] = useState<number | null>(null)
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -341,6 +345,27 @@ export default function ClientSession() {
     setSkipNote('')
   }
 
+  // ── Cancel (abort in-progress session and delete it) ──
+  async function cancelSession() {
+    if (!sessionId || !session) return
+    setCancelling(true)
+    // Delete session_sets first (FK), then session_exercises, then the session itself.
+    // Cascades may handle this, but we do it explicitly to be safe.
+    const { data: ses } = await supabase
+      .from('session_exercises')
+      .select('id')
+      .eq('session_id', sessionId)
+    const seIds = (ses ?? []).map(r => r.id)
+    if (seIds.length > 0) {
+      await supabase.from('session_sets').delete().in('session_exercise_id', seIds)
+      await supabase.from('session_exercises').delete().in('id', seIds)
+    }
+    await supabase.from('sessions').delete().eq('id', sessionId)
+    setCancelling(false)
+    setShowCancelConfirm(false)
+    navigate('/client/home')
+  }
+
   // ── Finish ──
   async function finishSession() {
     if (!sessionId || !session) return
@@ -450,11 +475,18 @@ export default function ClientSession() {
               <p className="font-barlow text-xs text-white/30">Unscheduled workout</p>
             )}
           </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className="font-bebas text-2xl text-[#C9A84C] tracking-widest tabular-nums">{formatTimer(elapsed)}</span>
             <button
+              onClick={() => setShowCancelConfirm(true)}
+              disabled={finishing || cancelling}
+              className="font-barlow text-xs text-white/40 border border-white/10 rounded-lg px-2.5 py-2 hover:text-white hover:border-white/30 transition-colors disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
               onClick={finishSession}
-              disabled={finishing}
+              disabled={finishing || cancelling}
               className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-4 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-50"
             >
               {finishing ? 'Finishing...' : 'Finish'}
@@ -604,6 +636,34 @@ export default function ClientSession() {
             <div className="flex gap-3">
               <button onClick={() => setSkipForIndex(null)} className="flex-1 font-barlow text-sm text-white/40 border border-[#2C2C2E] rounded-xl py-2.5 hover:text-white transition-colors">Cancel</button>
               <button onClick={confirmSkip} className="flex-1 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-xl hover:bg-[#E2C070] transition-colors">Skip Exercise</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cancel session confirm ── */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-sm p-5">
+            <h2 className="font-bebas text-xl text-white tracking-wide mb-2">Cancel session?</h2>
+            <p className="font-barlow text-sm text-white/60 mb-5">
+              This will discard everything you've logged so far and remove this session. You can start it again anytime from the home screen.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={cancelling}
+                className="flex-1 font-barlow text-sm text-white/60 border border-[#2C2C2E] rounded-xl py-2.5 hover:text-white transition-colors disabled:opacity-50"
+              >
+                Keep Going
+              </button>
+              <button
+                onClick={cancelSession}
+                disabled={cancelling}
+                className="flex-1 bg-red-500/80 text-white font-bebas text-sm tracking-widest py-2.5 rounded-xl hover:bg-red-500 transition-colors disabled:opacity-50"
+              >
+                {cancelling ? 'Cancelling...' : 'Discard Session'}
+              </button>
             </div>
           </div>
         </div>
