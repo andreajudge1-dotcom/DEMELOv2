@@ -162,7 +162,10 @@ export default function Programs() {
 
   async function fetchAll() {
     setLoading(true)
-    const [programsRes, assignRes, clientsRes] = await Promise.all([
+    // Note: client_cycle_assignments has no trainer_id column. We filter by joining
+    // through clients!inner(trainer_id) instead. We also fetch ALL assignment cycle_ids
+    // (active or not) so we can hide client copies from the library list.
+    const [programsRes, assignRes, allAssignRes, clientsRes] = await Promise.all([
       supabase
         .from('training_cycles')
         .select('id, name, description, cover_photo_url, num_days, num_weeks, tags, created_at')
@@ -170,10 +173,14 @@ export default function Programs() {
         .order('created_at', { ascending: false }),
       supabase
         .from('client_cycle_assignments')
-        .select('id, cycle_id, next_day_number, started_at, clients(full_name), training_cycles(name, num_days, num_weeks, cover_photo_url, tags)')
-        .eq('trainer_id', profile?.id)
+        .select('id, cycle_id, next_day_number, started_at, clients!inner(full_name, trainer_id), training_cycles(name, num_days, num_weeks, cover_photo_url, tags)')
+        .eq('clients.trainer_id', profile?.id)
         .eq('is_active', true)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('client_cycle_assignments')
+        .select('cycle_id, clients!inner(trainer_id)')
+        .eq('clients.trainer_id', profile?.id),
       supabase
         .from('clients')
         .select('id, full_name')
@@ -182,7 +189,12 @@ export default function Programs() {
         .order('full_name'),
     ])
 
-    setPrograms(programsRes.data ?? [])
+    // Hide client copies from the library list. Any cycle that has an assignment
+    // pointing to it is a per-client copy created by handleAssign/handleFinish.
+    const assignedCycleIds = new Set((allAssignRes.data ?? []).map((a: any) => a.cycle_id))
+    const libraryPrograms = (programsRes.data ?? []).filter(p => !assignedCycleIds.has(p.id))
+
+    setPrograms(libraryPrograms)
     setClients(clientsRes.data ?? [])
 
     const assignments: ActiveAssignment[] = (assignRes.data ?? []).map((a: any) => {
