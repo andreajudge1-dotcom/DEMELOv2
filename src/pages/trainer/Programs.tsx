@@ -68,6 +68,7 @@ async function copyProgram(
       num_weeks: cycle.num_weeks ?? 4,
       is_template: false,
       tags: cycle.tags ?? [],
+      parent_cycle_id: sourceCycleId, // mark this as a client copy of the source
     })
     .select()
     .single()
@@ -162,14 +163,15 @@ export default function Programs() {
 
   async function fetchAll() {
     setLoading(true)
-    // Note: client_cycle_assignments has no trainer_id column. We filter by joining
-    // through clients!inner(trainer_id) instead. We also fetch ALL assignment cycle_ids
-    // (active or not) so we can hide client copies from the library list.
-    const [programsRes, assignRes, allAssignRes, clientsRes] = await Promise.all([
+    // Library list = cycles with no parent_cycle_id (originals only, not client copies).
+    // Active assignments query: client_cycle_assignments has no trainer_id column,
+    // so we filter via clients!inner(trainer_id) instead.
+    const [programsRes, assignRes, clientsRes] = await Promise.all([
       supabase
         .from('training_cycles')
         .select('id, name, description, cover_photo_url, num_days, num_weeks, tags, created_at')
         .eq('trainer_id', profile?.id)
+        .is('parent_cycle_id', null)
         .order('created_at', { ascending: false }),
       supabase
         .from('client_cycle_assignments')
@@ -178,10 +180,6 @@ export default function Programs() {
         .eq('is_active', true)
         .order('created_at', { ascending: false }),
       supabase
-        .from('client_cycle_assignments')
-        .select('cycle_id, clients!inner(trainer_id)')
-        .eq('clients.trainer_id', profile?.id),
-      supabase
         .from('clients')
         .select('id, full_name')
         .eq('trainer_id', profile?.id)
@@ -189,12 +187,7 @@ export default function Programs() {
         .order('full_name'),
     ])
 
-    // Hide client copies from the library list. Any cycle that has an assignment
-    // pointing to it is a per-client copy created by handleAssign/handleFinish.
-    const assignedCycleIds = new Set((allAssignRes.data ?? []).map((a: any) => a.cycle_id))
-    const libraryPrograms = (programsRes.data ?? []).filter(p => !assignedCycleIds.has(p.id))
-
-    setPrograms(libraryPrograms)
+    setPrograms(programsRes.data ?? [])
     setClients(clientsRes.data ?? [])
 
     const assignments: ActiveAssignment[] = (assignRes.data ?? []).map((a: any) => {

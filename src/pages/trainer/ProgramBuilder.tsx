@@ -458,6 +458,7 @@ export default function ProgramBuilder() {
             num_weeks: srcCycle.num_weeks ?? 4,
             is_template: false,
             tags: srcCycle.tags ?? [],
+            parent_cycle_id: programId, // mark this as a client copy of the source
           })
           .select()
           .single()
