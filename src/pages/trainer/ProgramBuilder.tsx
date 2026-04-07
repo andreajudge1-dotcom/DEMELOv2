@@ -134,6 +134,37 @@ export default function ProgramBuilder() {
       const exerciseMap = new Map((allExercises ?? []).map(ex => [ex.name.toLowerCase(), ex]))
       const unmatched = new Set<string>()
 
+      // ── Auto-create exercises that don't exist in the trainer's library ──
+      // Without this, workout_exercises gets exercise_id = NULL for unmatched
+      // names, which then breaks session_exercises seeding (NOT NULL constraint).
+      const namesToCreate = new Set<string>()
+      for (const day of (parsed.days ?? [])) {
+        for (const ex of (day.exercises ?? [])) {
+          const name = (ex.name ?? '').trim()
+          if (!name) continue
+          if (!exerciseMap.has(name.toLowerCase())) {
+            namesToCreate.add(name)
+          }
+        }
+      }
+
+      if (namesToCreate.size > 0 && profile?.id) {
+        const rows = Array.from(namesToCreate).map(name => ({
+          trainer_id: profile.id,
+          name,
+          is_global: false,
+          is_unilateral: false,
+          per_side: false,
+        }))
+        const { data: created } = await supabase
+          .from('exercises')
+          .insert(rows)
+          .select('id, name, is_unilateral, per_side')
+        for (const ex of (created ?? [])) {
+          exerciseMap.set(ex.name.toLowerCase(), ex)
+        }
+      }
+
       const importedDays: WorkoutDay[] = (parsed.days ?? []).map((day: any, idx: number) => {
         // Build superset groups — normalize exercise names into shared labels
         const supersetLabels = new Map<string, string>()
