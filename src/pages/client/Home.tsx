@@ -290,6 +290,54 @@ export default function ClientHome() {
     if (error) console.error('Start session error:', error)
   }
 
+  async function markSessionComplete() {
+    if (!inProgressSession) return
+    const sessionId = inProgressSession.id
+
+    const { data: sess } = await supabase
+      .from('sessions')
+      .select('started_at')
+      .eq('id', sessionId)
+      .single()
+    if (!sess) return
+
+    const now = new Date()
+    const durationMin = Math.round((now.getTime() - new Date(sess.started_at).getTime()) / 60000)
+
+    // Gather logged sets to compute tonnage + avg RPE
+    const { data: seRows } = await supabase
+      .from('session_exercises')
+      .select('id')
+      .eq('session_id', sessionId)
+    const seIds = (seRows ?? []).map((r: any) => r.id)
+
+    let totalTonnage = 0, rpeSum = 0, rpeCount = 0
+    if (seIds.length > 0) {
+      const { data: setRows } = await supabase
+        .from('session_sets')
+        .select('weight_kg, reps_completed, rpe_actual')
+        .in('session_exercise_id', seIds)
+        .not('weight_kg', 'is', null)
+      for (const s of setRows ?? []) {
+        totalTonnage += ((s as any).weight_kg || 0) * ((s as any).reps_completed || 0)
+        if ((s as any).rpe_actual !== null) { rpeSum += (s as any).rpe_actual; rpeCount++ }
+      }
+    }
+
+    const avgRpe = rpeCount > 0 ? Math.round((rpeSum / rpeCount) * 10) / 10 : null
+
+    await supabase.from('sessions').update({
+      status: 'completed',
+      completed_at: now.toISOString(),
+      duration_min: durationMin,
+      total_tonnage: Math.round(totalTonnage),
+      average_rpe: avgRpe,
+    }).eq('id', sessionId)
+
+    setInProgressSession(null)
+    loadAll(profile!.id)
+  }
+
   async function saveExtraWorkout() {
     if (!client || !extraType) return
     setSavingExtra(true)
@@ -545,12 +593,29 @@ export default function ClientHome() {
                 <span className="font-barlow text-sm text-green-400">Completed</span>
               </div>
               {inProgressSession ? (
-                <button
-                  onClick={() => navigate(`/client/session/${inProgressSession.id}`)}
-                  className="w-full bg-[#C9A84C] text-black font-bebas text-lg tracking-widest rounded-xl py-3 hover:bg-[#E2C070] transition-colors"
-                >
-                  RESUME SESSION
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => navigate(`/client/session/${inProgressSession.id}`)}
+                    className="w-full bg-[#C9A84C] text-black font-bebas text-lg tracking-widest rounded-xl py-3 hover:bg-[#E2C070] transition-colors shadow-[0_0_20px_rgba(201,168,76,0.25)]"
+                  >
+                    RESUME SESSION
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={markSessionComplete}
+                      className="flex-1 font-barlow text-xs text-white/60 hover:text-white/90 border border-white/[0.08] hover:border-white/20 rounded-xl py-2.5 transition-colors"
+                    >
+                      Mark as complete
+                    </button>
+                    <button
+                      onClick={() => startSession()}
+                      disabled={startingSession}
+                      className="flex-1 font-barlow text-xs text-white/30 hover:text-white/60 border border-white/[0.06] hover:border-white/[0.12] rounded-xl py-2.5 transition-colors disabled:opacity-50"
+                    >
+                      {startingSession ? 'Starting...' : 'Start fresh'}
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <button
                   onClick={() => startSession()}
@@ -592,19 +657,29 @@ export default function ClientHome() {
               {/* RESUME or START SESSION */}
               {inProgressSession ? (
                 <div className="flex flex-col gap-2">
+                  {/* Primary: resume */}
                   <button
                     onClick={() => navigate(`/client/session/${inProgressSession.id}`)}
                     className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-all min-h-[56px] shadow-[0_0_20px_rgba(201,168,76,0.25)]"
                   >
                     RESUME SESSION
                   </button>
-                  <button
-                    onClick={() => startSession()}
-                    disabled={startingSession}
-                    className="w-full font-barlow text-xs text-white/30 hover:text-white/60 transition-colors py-2"
-                  >
-                    {startingSession ? 'Starting...' : 'Start fresh instead'}
-                  </button>
+                  {/* Secondary row: mark complete or start fresh */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={markSessionComplete}
+                      className="flex-1 font-barlow text-xs text-white/60 hover:text-white/90 border border-white/[0.08] hover:border-white/20 rounded-xl py-2.5 transition-colors"
+                    >
+                      Mark as complete
+                    </button>
+                    <button
+                      onClick={() => startSession()}
+                      disabled={startingSession}
+                      className="flex-1 font-barlow text-xs text-white/30 hover:text-white/60 border border-white/[0.06] hover:border-white/[0.12] rounded-xl py-2.5 transition-colors disabled:opacity-50"
+                    >
+                      {startingSession ? 'Starting...' : 'Start fresh'}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <button
