@@ -38,8 +38,10 @@ interface Workout {
 
 interface WorkoutExercise {
   id: string
+  exercise_id: string | null
   exercises: { name: string } | null
   workout_set_prescriptions: { rpe_target: number | null }[]
+  fallback_name?: string
 }
 
 interface Session {
@@ -154,44 +156,86 @@ export default function ClientHome() {
       const ids = workoutRows.map(w => w.id)
       const { data: weData } = await supabase
         .from('workout_exercises')
-        .select('workout_id, exercises(name)')
+        .select('workout_id, exercise_id, exercises(name)')
         .in('workout_id', ids)
         .order('position')
       if (weData) {
+        // Skip rows with no exercise_id — these are orphaned references from
+        // exercises that were deleted via ON DELETE SET NULL.
+        const validRows = (weData as any[]).filter(row => !!row.exercise_id)
+
+        // Fallback name lookup for any rows where the embedded join missed.
+        const missingIds = validRows
+          .filter(row => !row.exercises?.name && row.exercise_id)
+          .map(row => row.exercise_id as string)
+        let nameById = new Map<string, string>()
+        if (missingIds.length > 0) {
+          const { data: exRows } = await supabase
+            .from('exercises')
+            .select('id, name')
+            .in('id', missingIds)
+          nameById = new Map((exRows ?? []).map((e: any) => [e.id, e.name]))
+        }
+
         const names: Record<string, string[]> = {}
-        weData.forEach((row: any) => {
+        validRows.forEach((row: any) => {
           if (!names[row.workout_id]) names[row.workout_id] = []
-          if (row.exercises?.name) names[row.workout_id].push(row.exercises.name)
+          const joinName = row.exercises?.name as string | undefined
+          const fallbackName = row.exercise_id ? nameById.get(row.exercise_id) : undefined
+          const displayName = joinName || fallbackName
+          if (displayName) names[row.workout_id].push(displayName)
         })
         setDayExerciseNames(names)
+
+        // Sessions completed this week
+        const monday = getMondayOfWeek(new Date())
+        const sunday = getSundayOfWeek(new Date())
+        const { data: sessionRows } = await supabase
+          .from('sessions')
+          .select('id, workout_id, completed_at')
+          .eq('client_id', clientRow.id)
+          .not('completed_at', 'is', null)
+          .gte('completed_at', monday.toISOString())
+          .lte('completed_at', sunday.toISOString())
+        setCompletedSessions(sessionRows ?? [])
+
+        // Determine suggested next day:
+        // Priority 1 — uncompleted workout WITH exercises
+        // Priority 2 — any workout WITH exercises (all done, pick first non-empty)
+        // Priority 3 — uncompleted workout even if empty (graceful fallback)
+        // Priority 4 — first workout in the list
+        const completedIds = new Set((sessionRows ?? []).map((s: any) => s.workout_id))
+        const hasExercises = (w: Workout) => (names[w.id]?.length ?? 0) > 0
+        const suggestedWorkout = (workoutRows ?? []).find(w => !completedIds.has(w.id) && hasExercises(w))
+          ?? (workoutRows ?? []).find(w => hasExercises(w))
+          ?? (workoutRows ?? []).find(w => !completedIds.has(w.id))
+          ?? (workoutRows ?? [])[0]
+          ?? null
+
+        if (suggestedWorkout) {
+          const { data: exRows } = await supabase
+            .from('workout_exercises')
+            .select('id, exercise_id, exercises(name), workout_set_prescriptions(rpe_target)')
+            .eq('workout_id', suggestedWorkout.id)
+            .order('position')
+
+          const exValid = ((exRows ?? []) as any[]).filter(r => !!r.exercise_id)
+          const missingExIds = exValid
+            .filter(r => !r.exercises?.name && r.exercise_id)
+            .map(r => r.exercise_id as string)
+          let exNameById = new Map<string, string>()
+          if (missingExIds.length > 0) {
+            const { data: exFallback } = await supabase
+              .from('exercises').select('id, name').in('id', missingExIds)
+            exNameById = new Map((exFallback ?? []).map((e: any) => [e.id, e.name]))
+          }
+          const enriched = exValid.map(r => ({
+            ...r,
+            fallback_name: r.exercise_id ? exNameById.get(r.exercise_id) : undefined,
+          }))
+          setTodayExercises(enriched as unknown as WorkoutExercise[])
+        }
       }
-    }
-
-    // Sessions completed this week
-    const monday = getMondayOfWeek(new Date())
-    const sunday = getSundayOfWeek(new Date())
-    const { data: sessionRows } = await supabase
-      .from('sessions')
-      .select('id, workout_id, completed_at')
-      .eq('client_id', clientRow.id)
-      .not('completed_at', 'is', null)
-      .gte('completed_at', monday.toISOString())
-      .lte('completed_at', sunday.toISOString())
-    setCompletedSessions(sessionRows ?? [])
-
-    // Determine suggested next day — first workout not completed this week
-    const completedIds = new Set((sessionRows ?? []).map(s => s.workout_id))
-    const suggestedWorkout = (workoutRows ?? []).find(w => !completedIds.has(w.id))
-      ?? (workoutRows ?? []).find(w => w.day_number === assignRow.next_day_number)
-      ?? (workoutRows ?? [])[0]
-
-    if (suggestedWorkout) {
-      const { data: exRows } = await supabase
-        .from('workout_exercises')
-        .select('id, exercises(name), workout_set_prescriptions(rpe_target)')
-        .eq('workout_id', suggestedWorkout.id)
-        .order('position')
-      setTodayExercises((exRows ?? []) as unknown as WorkoutExercise[])
     }
 
     setLoading(false)
@@ -204,7 +248,11 @@ export default function ClientHome() {
     setStartingSession(true)
 
     const completedIds = new Set(completedSessions.map(s => s.workout_id))
-    const suggestedWorkout = workouts.find(w => !completedIds.has(w.id)) ?? workouts[0]
+    const hasEx = (w: Workout) => (dayExerciseNames[w.id]?.length ?? 0) > 0
+    const suggestedWorkout = workouts.find(w => !completedIds.has(w.id) && hasEx(w))
+      ?? workouts.find(w => hasEx(w))
+      ?? workouts.find(w => !completedIds.has(w.id))
+      ?? workouts[0]
     const w = workoutOverride ?? suggestedWorkout ?? null
 
     const { data, error } = await supabase
@@ -496,9 +544,10 @@ export default function ClientHome() {
                 {todayExercises.slice(0, 2).map(ex => {
                   const sets = ex.workout_set_prescriptions?.length ?? 0
                   const rpe = ex.workout_set_prescriptions?.[0]?.rpe_target
+                  const displayName = ex.exercises?.name || ex.fallback_name || 'Exercise'
                   return (
                     <div key={ex.id} className="flex items-center justify-between">
-                      <span className="font-barlow text-sm text-white/70">{ex.exercises?.name ?? 'Exercise'}</span>
+                      <span className="font-barlow text-sm text-white/70">{displayName}</span>
                       <span className="font-barlow text-xs text-white/30">{sets} sets{rpe ? ` · RPE ${rpe}` : ''}</span>
                     </div>
                   )
