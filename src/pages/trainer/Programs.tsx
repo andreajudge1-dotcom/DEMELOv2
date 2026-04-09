@@ -1,8 +1,100 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import mammoth from 'mammoth'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import Select from '../../components/Select'
+
+// ── Types for AI-parsed program ──────────────────────────────────────────────
+
+interface ParsedSet {
+  set_number: number
+  reps_min: number
+  reps_max: number
+  set_type: string
+  special_instructions: string | null
+}
+
+interface ParsedExercise {
+  name: string
+  superset_with: string | null
+  coaching_notes: string
+  sets: ParsedSet[]
+}
+
+interface ParsedDay {
+  day_number: number
+  day_name: string
+  focus: string
+  exercises: ParsedExercise[]
+}
+
+interface ParsedProgram {
+  program_name: string
+  weeks: number
+  days: ParsedDay[]
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Map AI set_type values to valid DB enum values
+const VALID_SET_TYPES = new Set(['warmup', 'working', 'backoff', 'drop', 'myorep', 'amrap', 'tempo', 'pause'])
+function normalizeSetType(t: string): string {
+  return VALID_SET_TYPES.has(t) ? t : 'working'
+}
+
+function formatReps(min: number, max: number): string {
+  if (!min && !max) return ''
+  if (!max || min === max) return String(min || max)
+  return `${min}-${max}`
+}
+
+// Look up an exercise by name (case-insensitive) across global + trainer exercises.
+// Creates a new trainer-custom exercise if no match is found.
+// NEVER returns null — this guarantees workout_exercises.exercise_id is always set.
+async function resolveOrCreateExercise(name: string, trainerId: string): Promise<string> {
+  const trimmed = name.trim()
+
+  // 1. Try global exercises (case-insensitive)
+  const { data: globalMatch } = await supabase
+    .from('exercises')
+    .select('id')
+    .ilike('name', trimmed)
+    .eq('is_global', true)
+    .limit(1)
+    .maybeSingle()
+  if (globalMatch?.id) return globalMatch.id
+
+  // 2. Try trainer's custom exercises
+  const { data: trainerMatch } = await supabase
+    .from('exercises')
+    .select('id')
+    .ilike('name', trimmed)
+    .eq('trainer_id', trainerId)
+    .limit(1)
+    .maybeSingle()
+  if (trainerMatch?.id) return trainerMatch.id
+
+  // 3. Create a new trainer-custom exercise
+  const { data: newEx } = await supabase
+    .from('exercises')
+    .insert({
+      trainer_id: trainerId,
+      name: trimmed,
+      is_global: false,
+      primary_muscle: '',
+      equipment: '',
+      movement_pattern: '',
+      difficulty: '',
+      is_unilateral: false,
+      per_side: false,
+    })
+    .select('id')
+    .single()
+
+  if (!newEx?.id) throw new Error(`Failed to create exercise: ${trimmed}`)
+  return newEx.id
+}
 
 interface Program {
   id: string
@@ -141,12 +233,23 @@ export default function Programs() {
   const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useState<'library' | 'active'>('library')
+  const [viewMode, setViewMode] = useState<'tile' | 'list'>(() => {
+    if (typeof window === 'undefined') return 'tile'
+    return (localStorage.getItem('programs_view_mode') as 'tile' | 'list') ?? 'tile'
+  })
   const [programs, setPrograms] = useState<Program[]>([])
   const [activeAssignments, setActiveAssignments] = useState<ActiveAssignment[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState('')
+
+  function setViewModeAndPersist(mode: 'tile' | 'list') {
+    setViewMode(mode)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('programs_view_mode', mode)
+    }
+  }
 
   // Assign modal state
   const [assignProgram, setAssignProgram] = useState<Program | null>(null)
@@ -158,6 +261,14 @@ export default function Programs() {
   // Delete
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Import from document
+  type ImportStep = 'upload' | 'extracting' | 'parsing' | 'review' | 'saving'
+  const [importStep, setImportStep] = useState<ImportStep | null>(null)
+  const [importError, setImportError] = useState('')
+  const [parsedData, setParsedData] = useState<ParsedProgram | null>(null)
+  const [importName, setImportName] = useState('')
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -224,12 +335,25 @@ export default function Programs() {
       return
     }
 
-    // Deactivate any existing active assignment for this client
-    await supabase
+    // Deactivate any existing active assignment for this client.
+    // IMPORTANT: we only set { is_active: false } here — the deployed
+    // client_cycle_assignments table does NOT have a `status` column (see
+    // the fetchAll() comment above), and including a nonexistent column in
+    // the UPDATE makes PostgREST return a 400 error. We also explicitly
+    // check for that error so a future schema drift can't silently leave
+    // the old assignment active and cause the "two active programs" bug
+    // we just cleaned up (see supabase/migrations/fix_stale_client_assignments.sql).
+    const { error: deactivateErr } = await supabase
       .from('client_cycle_assignments')
-      .update({ is_active: false, status: 'completed' })
+      .update({ is_active: false })
       .eq('client_id', assignClientId)
       .eq('is_active', true)
+
+    if (deactivateErr) {
+      setAssignError(`Could not deactivate previous program: ${deactivateErr.message}`)
+      setAssigning(false)
+      return
+    }
 
     // Create assignment to the copy
     const { error: assignErr } = await supabase.from('client_cycle_assignments').insert({
@@ -256,6 +380,166 @@ export default function Programs() {
     setPrograms(prev => prev.filter(p => p.id !== id))
     setConfirmDeleteId(null)
     setDeleting(false)
+  }
+
+  // ── Import from Document ──────────────────────────────────────────────────
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (importFileRef.current) importFileRef.current.value = ''
+
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    setImportError('')
+    setImportStep('extracting')
+
+    try {
+      let documentText = ''
+
+      if (ext === 'docx' || ext === 'doc') {
+        const arrayBuffer = await file.arrayBuffer()
+        const result = await mammoth.extractRawText({ arrayBuffer })
+        documentText = result.value
+      } else if (ext === 'txt' || ext === 'csv') {
+        documentText = await file.text()
+      } else if (ext === 'pdf') {
+        setImportError('PDF text extraction is not supported in the browser. Please export your program as a .docx or .txt file and try again.')
+        setImportStep('upload')
+        return
+      } else {
+        // Attempt plain text read for other types
+        documentText = await file.text()
+      }
+
+      if (!documentText.trim()) {
+        setImportError('Could not extract text from this file. Please try a .docx or .txt version.')
+        setImportStep('upload')
+        return
+      }
+
+      setImportStep('parsing')
+
+      const apiRes = await fetch('/api/parse-program', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentText, documentName: file.name }),
+      })
+
+      if (!apiRes.ok) {
+        const errBody = await apiRes.json().catch(() => ({}))
+        setImportError((errBody as any).error ?? `Parse error: ${apiRes.status}`)
+        setImportStep('upload')
+        return
+      }
+
+      const parsed: ParsedProgram = await apiRes.json()
+      setParsedData(parsed)
+      setImportName(parsed.program_name || file.name.replace(/\.[^.]+$/, ''))
+      setImportStep('review')
+    } catch (err: any) {
+      setImportError(err.message ?? 'Unexpected error during import')
+      setImportStep('upload')
+    }
+  }
+
+  async function saveImportedProgram() {
+    if (!parsedData || !profile?.id) return
+    setImportStep('saving')
+    setImportError('')
+
+    try {
+      const trainerId = profile.id
+
+      // 1. Create training_cycle
+      const { data: cycle } = await supabase
+        .from('training_cycles')
+        .insert({
+          trainer_id: trainerId,
+          name: importName.trim() || parsedData.program_name,
+          description: null,
+          cover_photo_url: null,
+          num_days: parsedData.days.length,
+          num_weeks: parsedData.weeks || 4,
+          is_template: false,
+          tags: [],
+        })
+        .select('id')
+        .single()
+
+      if (!cycle) throw new Error('Failed to create training cycle')
+
+      // 2. Save each day + exercises
+      for (const day of parsedData.days) {
+        const isRestDay = day.exercises.length === 0
+
+        const { data: workout } = await supabase
+          .from('workouts')
+          .insert({
+            cycle_id: cycle.id,
+            day_number: day.day_number,
+            name: day.day_name || `Day ${day.day_number}`,
+            focus: isRestDay ? 'rest_day' : (day.focus || null),
+          })
+          .select('id')
+          .single()
+
+        if (!workout || isRestDay) continue
+
+        let position = 0
+        for (const ex of day.exercises) {
+          // ALWAYS resolve to a real UUID — never skip, never null
+          const exerciseId = await resolveOrCreateExercise(ex.name, trainerId)
+
+          const { data: we } = await supabase
+            .from('workout_exercises')
+            .insert({
+              workout_id: workout.id,
+              exercise_id: exerciseId,
+              position: position++,
+              notes: ex.coaching_notes || null,
+              superset_group: null,
+              cue_override: null,
+            })
+            .select('id')
+            .single()
+
+          if (!we) continue
+
+          if (ex.sets.length > 0) {
+            await supabase.from('workout_set_prescriptions').insert(
+              ex.sets.map(s => ({
+                workout_exercise_id: we.id,
+                set_number: s.set_number,
+                set_type: normalizeSetType(s.set_type),
+                reps: formatReps(s.reps_min, s.reps_max) || null,
+                rpe_target: null,
+                load_modifier: s.special_instructions || null,
+                hold_seconds: null,
+                tempo: null,
+                cue: null,
+              }))
+            )
+          }
+        }
+      }
+
+      // Done — refresh library and close modal
+      await fetchAll()
+      setImportStep(null)
+      setParsedData(null)
+      setImportName('')
+      setImportError('')
+    } catch (err: any) {
+      setImportError(err.message ?? 'Failed to save program')
+      setImportStep('review')
+    }
+  }
+
+  function closeImportModal() {
+    setImportStep(null)
+    setParsedData(null)
+    setImportName('')
+    setImportError('')
   }
 
   const filteredLibrary = programs.filter(p => {
@@ -291,7 +575,13 @@ export default function Programs() {
             {programs.length} in library · {activeAssignments.length} active
           </p>
         </div>
-        <div className="absolute bottom-6 right-6">
+        <div className="absolute bottom-6 right-6 flex gap-2">
+          <button
+            onClick={() => { setImportStep('upload'); setImportError('') }}
+            className="bg-white/10 backdrop-blur-sm text-white font-bebas text-sm tracking-widest px-5 py-2.5 rounded-lg hover:bg-white/20 border border-white/20 transition-colors"
+          >
+            Import from Doc
+          </button>
           <button
             onClick={() => navigate('/trainer/programs/new')}
             className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-5 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
@@ -327,24 +617,57 @@ export default function Programs() {
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-[#2C2C2E]">
-        {(['library', 'active'] as const).map(tab => (
+      {/* Tabs + View toggle */}
+      <div className="flex items-center justify-between mb-6 border-b border-[#2C2C2E]">
+        <div className="flex gap-1">
+          {(['library', 'active'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`font-barlow text-sm px-4 py-2.5 capitalize border-b-2 -mb-px transition-colors ${
+                activeTab === tab
+                  ? 'text-[#C9A84C] border-[#C9A84C]'
+                  : 'text-white/40 border-transparent hover:text-white/60'
+              }`}
+            >
+              {tab === 'library' ? 'Library' : 'Active'}
+              <span className="ml-1.5 text-xs text-white/30">
+                {tab === 'library' ? programs.length : activeAssignments.length}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* View mode toggle */}
+        <div className="flex items-center gap-1 bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg p-0.5 mb-2">
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`font-barlow text-sm px-4 py-2.5 capitalize border-b-2 -mb-px transition-colors ${
-              activeTab === tab
-                ? 'text-[#C9A84C] border-[#C9A84C]'
-                : 'text-white/40 border-transparent hover:text-white/60'
+            onClick={() => setViewModeAndPersist('tile')}
+            title="Tile view"
+            className={`flex items-center justify-center w-8 h-7 rounded-md transition-colors ${
+              viewMode === 'tile' ? 'bg-[#C9A84C] text-black' : 'text-white/40 hover:text-white'
             }`}
           >
-            {tab === 'library' ? 'Library' : 'Active'}
-            <span className="ml-1.5 text-xs text-white/30">
-              {tab === 'library' ? programs.length : activeAssignments.length}
-            </span>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
           </button>
-        ))}
+          <button
+            onClick={() => setViewModeAndPersist('list')}
+            title="List view"
+            className={`flex items-center justify-center w-8 h-7 rounded-md transition-colors ${
+              viewMode === 'list' ? 'bg-[#C9A84C] text-black' : 'text-white/40 hover:text-white'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <line x1="4" y1="6" x2="20" y2="6" strokeLinecap="round" />
+              <line x1="4" y1="12" x2="20" y2="12" strokeLinecap="round" />
+              <line x1="4" y1="18" x2="20" y2="18" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* ── LIBRARY TAB ── */}
@@ -360,7 +683,7 @@ export default function Programs() {
               Build First Program
             </button>
           </div>
-        ) : (
+        ) : viewMode === 'tile' ? (
           <div className="grid grid-cols-3 gap-4">
             {filteredLibrary.map((program, i) => (
               <div
@@ -431,6 +754,63 @@ export default function Programs() {
               <span className="font-bebas text-sm text-white/20 tracking-widest">New Program</span>
             </div>
           </div>
+        ) : (
+          /* List view */
+          <div className="flex flex-col gap-2">
+            {filteredLibrary.map(program => (
+              <div
+                key={program.id}
+                className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-5 py-4 flex items-center gap-4 hover:border-[#3A3A3C] transition-colors group"
+              >
+                <div
+                  onClick={() => navigate(`/trainer/programs/${program.id}`)}
+                  className="flex-1 min-w-0 cursor-pointer"
+                >
+                  <h3 className="font-bebas text-lg text-white tracking-wide hover:text-[#C9A84C] transition-colors">
+                    {program.name}
+                  </h3>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <span className="font-barlow text-xs text-white/40">{program.num_days}d/wk · {program.num_weeks}wk</span>
+                    {(program.tags ?? []).length > 0 && (
+                      <div className="flex gap-1 flex-wrap">
+                        {(program.tags ?? []).map(tag => (
+                          <span key={tag} className="font-barlow text-xs px-2 py-0.5 rounded-full bg-[#C9A84C]/10 text-[#C9A84C]/70 border border-[#C9A84C]/20">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setAssignProgram(program)
+                    setAssignClientId('')
+                    setAssignError('')
+                    setAssignSuccess('')
+                  }}
+                  className="font-barlow text-xs text-[#C9A84C] border border-[#C9A84C]/30 rounded-lg px-3 py-1.5 hover:bg-[#C9A84C]/10 transition-colors flex-shrink-0"
+                >
+                  Assign
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteId(program.id)}
+                  className="text-white/30 hover:text-[#E05555] transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
+                  title="Delete"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+
+            {/* New program row */}
+            <div
+              onClick={() => navigate('/trainer/programs/new')}
+              className="bg-[#141414] border border-dashed border-[#2C2C2E] rounded-xl px-5 py-4 flex items-center justify-center gap-2 cursor-pointer hover:border-[#C9A84C] transition-colors"
+            >
+              <span className="font-bebas text-sm text-white/30 tracking-widest">+ New Program</span>
+            </div>
+          </div>
         )
       )}
 
@@ -441,28 +821,23 @@ export default function Programs() {
             <p className="font-bebas text-2xl text-white/20 tracking-wide mb-2">No active assignments</p>
             <p className="font-barlow text-sm text-white/30">Assign a library program to a client to see it here.</p>
           </div>
-        ) : (
-          <div className="flex flex-col gap-3">
+        ) : viewMode === 'tile' ? (
+          <div className="grid grid-cols-3 gap-4">
             {filteredActive.map((a, i) => {
               const currentWeek = Math.ceil(a.next_day_number / Math.max(a.num_days, 1))
               const pct = Math.min(100, Math.round(((a.next_day_number - 1) / Math.max(a.num_days * a.num_weeks, 1)) * 100))
               return (
-                <div key={a.id} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl overflow-hidden flex">
+                <div key={a.id} className="bg-[#1C1C1E] rounded-xl border border-[#2C2C2E] overflow-hidden hover:border-[#3A3A3C] transition-colors">
                   <div
-                    className="w-20 h-auto bg-cover bg-center flex-shrink-0"
+                    className="h-32 bg-cover bg-center relative"
                     style={{ backgroundImage: `url(${getCover(a.cover_photo_url, i)})` }}
-                  />
-                  <div className="flex-1 px-5 py-4 min-w-0">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-barlow font-semibold text-white truncate">{a.program_name}</p>
-                        <p className="font-barlow text-xs text-[#C9A84C] mt-0.5">{a.client_name}</p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="font-barlow text-xs text-white/50">Week {currentWeek} of {a.num_weeks}</p>
-                        <p className="font-barlow text-xs text-white/30 mt-0.5">{a.num_days}d/wk</p>
-                      </div>
-                    </div>
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#1C1C1E] via-[#1C1C1E]/30 to-transparent" />
+                  </div>
+                  <div className="p-4">
+                    <p className="font-bebas text-lg text-white tracking-wide truncate">{a.program_name}</p>
+                    <p className="font-barlow text-xs text-[#C9A84C] mt-0.5">{a.client_name}</p>
+                    <p className="font-barlow text-xs text-white/40 mt-1">Week {currentWeek} of {a.num_weeks} · {a.num_days}d/wk</p>
                     <div className="mt-3 h-1 bg-[#2C2C2E] rounded-full overflow-hidden">
                       <div className="h-full bg-[#C9A84C] rounded-full" style={{ width: `${pct}%` }} />
                     </div>
@@ -476,6 +851,40 @@ export default function Programs() {
                       </div>
                     )}
                   </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          /* List view */
+          <div className="flex flex-col gap-2">
+            {filteredActive.map(a => {
+              const currentWeek = Math.ceil(a.next_day_number / Math.max(a.num_days, 1))
+              const pct = Math.min(100, Math.round(((a.next_day_number - 1) / Math.max(a.num_days * a.num_weeks, 1)) * 100))
+              return (
+                <div key={a.id} className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-xl px-5 py-4 hover:border-[#3A3A3C] transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-barlow font-semibold text-white truncate">{a.program_name}</p>
+                      <p className="font-barlow text-xs text-[#C9A84C] mt-0.5">{a.client_name}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="font-barlow text-xs text-white/50">Week {currentWeek} of {a.num_weeks}</p>
+                      <p className="font-barlow text-xs text-white/30 mt-0.5">{a.num_days}d/wk</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-1 bg-[#2C2C2E] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#C9A84C] rounded-full" style={{ width: `${pct}%` }} />
+                  </div>
+                  {(a.tags ?? []).length > 0 && (
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      {(a.tags ?? []).map(tag => (
+                        <span key={tag} className="font-barlow text-xs px-2 py-0.5 rounded-full bg-[#C9A84C]/10 text-[#C9A84C]/70 border border-[#C9A84C]/20">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -529,6 +938,174 @@ export default function Programs() {
                 {assignSuccess ? 'Done' : 'Cancel'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Import from Document Modal ── */}
+      {importStep !== null && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-lg max-h-[85vh] flex flex-col">
+
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-[#2C2C2E] flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="font-bebas text-2xl text-white tracking-wide">Import from Document</h2>
+                <p className="font-barlow text-xs text-white/30 mt-0.5">
+                  {importStep === 'upload' && 'Upload a .docx or .txt training program file'}
+                  {importStep === 'extracting' && 'Reading document...'}
+                  {importStep === 'parsing' && 'Analyzing with AI...'}
+                  {importStep === 'review' && 'Review before saving to library'}
+                  {importStep === 'saving' && 'Saving to library...'}
+                </p>
+              </div>
+              {importStep !== 'extracting' && importStep !== 'parsing' && importStep !== 'saving' && (
+                <button onClick={closeImportModal} className="text-white/30 hover:text-white text-xl leading-none ml-4">×</button>
+              )}
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+
+              {/* Error banner */}
+              {importError && (
+                <div className="mb-4 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 flex items-start gap-3">
+                  <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="font-barlow text-sm text-red-400">{importError}</p>
+                </div>
+              )}
+
+              {/* Upload step */}
+              {importStep === 'upload' && (
+                <div>
+                  <input
+                    ref={importFileRef}
+                    type="file"
+                    accept=".docx,.doc,.txt,.csv"
+                    className="hidden"
+                    onChange={handleImportFile}
+                  />
+                  <button
+                    onClick={() => importFileRef.current?.click()}
+                    className="w-full border-2 border-dashed border-[#3A3A3C] hover:border-[#C9A84C]/50 rounded-2xl p-10 flex flex-col items-center gap-3 transition-colors group"
+                  >
+                    <div className="w-14 h-14 rounded-2xl bg-[#C9A84C]/10 group-hover:bg-[#C9A84C]/15 flex items-center justify-center transition-colors">
+                      <svg className="w-7 h-7 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <p className="font-barlow text-sm font-semibold text-white">Click to choose a file</p>
+                      <p className="font-barlow text-xs text-white/30 mt-1">Supports .docx and .txt</p>
+                    </div>
+                  </button>
+
+                  <div className="mt-5 bg-[#141414] rounded-xl border border-[#2C2C2E] p-4">
+                    <p className="font-barlow text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">How it works</p>
+                    <div className="flex flex-col gap-2">
+                      {['Upload your training document (.docx or .txt)', 'AI reads it and extracts exercises, sets, and rep ranges', 'Review the result, then save it to your program library'].map((step, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <span className="w-5 h-5 rounded-full bg-[#C9A84C]/15 text-[#C9A84C] font-bebas text-xs flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                          <p className="font-barlow text-xs text-white/40">{step}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Loading steps */}
+              {(importStep === 'extracting' || importStep === 'parsing' || importStep === 'saving') && (
+                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                  <div className="w-10 h-10 border-2 border-[#C9A84C]/30 border-t-[#C9A84C] rounded-full animate-spin" />
+                  <p className="font-barlow text-sm text-white/40">
+                    {importStep === 'extracting' && 'Reading document text...'}
+                    {importStep === 'parsing' && 'AI is analyzing the program structure...'}
+                    {importStep === 'saving' && 'Saving exercises and workouts...'}
+                  </p>
+                </div>
+              )}
+
+              {/* Review step */}
+              {importStep === 'review' && parsedData && (
+                <div className="flex flex-col gap-5">
+                  {/* Editable program name */}
+                  <div>
+                    <label className="font-barlow text-xs text-white/40 uppercase tracking-wider block mb-1.5">Program Name</label>
+                    <input
+                      type="text"
+                      value={importName}
+                      onChange={e => setImportName(e.target.value)}
+                      className="w-full bg-[#0A0A0A] border border-[#2C2C2E] focus:border-[#C9A84C]/50 rounded-xl px-4 py-3 font-barlow text-sm text-white placeholder-white/20 outline-none transition-colors"
+                      placeholder="Program name..."
+                    />
+                  </div>
+
+                  {/* Stats strip */}
+                  <div className="flex gap-3">
+                    {[
+                      { label: 'Days', value: parsedData.days.length },
+                      { label: 'Weeks', value: parsedData.weeks || 4 },
+                      { label: 'Exercises', value: parsedData.days.reduce((sum, d) => sum + d.exercises.length, 0) },
+                    ].map(stat => (
+                      <div key={stat.label} className="flex-1 bg-[#141414] border border-[#2C2C2E] rounded-xl px-3 py-3 text-center">
+                        <p className="font-bebas text-2xl text-[#C9A84C]">{stat.value}</p>
+                        <p className="font-barlow text-xs text-white/30">{stat.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Day breakdown */}
+                  <div className="flex flex-col gap-2">
+                    <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Days Preview</p>
+                    {parsedData.days.map(day => (
+                      <div key={day.day_number} className="bg-[#141414] border border-[#2C2C2E] rounded-xl px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-[#C9A84C]/15 text-[#C9A84C] font-bebas text-xs flex items-center justify-center">{day.day_number}</span>
+                            <span className="font-barlow text-sm font-semibold text-white">{day.day_name}</span>
+                          </div>
+                          {day.exercises.length > 0 ? (
+                            <span className="font-barlow text-xs text-white/30">{day.exercises.length} exercises</span>
+                          ) : (
+                            <span className="font-barlow text-xs text-white/20 italic">Rest day</span>
+                          )}
+                        </div>
+                        {day.exercises.length > 0 && (
+                          <div className="flex flex-col gap-1 pl-8">
+                            {day.exercises.slice(0, 4).map((ex, i) => (
+                              <p key={i} className="font-barlow text-xs text-white/40 truncate">{ex.name}</p>
+                            ))}
+                            {day.exercises.length > 4 && (
+                              <p className="font-barlow text-xs text-white/20">+ {day.exercises.length - 4} more</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {importStep === 'review' && (
+              <div className="px-6 pb-6 pt-4 border-t border-[#2C2C2E] flex gap-3 flex-shrink-0">
+                <button
+                  onClick={closeImportModal}
+                  className="flex-1 py-3 font-barlow text-sm text-white/50 hover:text-white border border-[#2C2C2E] rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveImportedProgram}
+                  disabled={!importName.trim()}
+                  className="flex-1 py-3 bg-[#C9A84C] text-black font-bebas text-base tracking-widest rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-40"
+                >
+                  Save to Library
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
