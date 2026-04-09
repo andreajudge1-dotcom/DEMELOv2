@@ -83,7 +83,7 @@ async function resolveOrCreateExercise(name: string, trainerId: string): Promise
       trainer_id: trainerId,
       name: trimmed,
       is_global: false,
-      primary_muscle: null,
+      primary_muscle: 'General',
       equipment: null,
       movement_pattern: null,
       difficulty: null,
