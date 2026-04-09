@@ -29,7 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 16384,
-        system: 'You are a fitness program parser. Extract ONLY the weekly training schedule (Monday through Sunday workout days) from this document. Ignore nutrition plans, disclaimers, introductions, warm-up protocols, and any non-exercise content. Return only valid JSON with no other text, markdown, or explanation. Be concise — use short exercise names and minimal notes.',
+        system: 'You are a fitness program parser. Extract the complete weekly training schedule from this document. Capture EVERY set listed for every exercise — including warm-up sets, feeder sets, activation sets, and working sets. Do not skip or merge any sets. Return only valid JSON with no other text, markdown, or explanation.',
         messages: [
           {
             role: 'user',
@@ -42,19 +42,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     {
       "day_number": number,
       "day_name": "string",
-      "focus": "string describing the training focus such as Lower Glute or Shoulders Arms",
+      "focus": "string describing the training focus e.g. Lower Glute or Shoulders Arms",
       "exercises": [
         {
           "name": "string",
-          "superset_with": "string or null",
-          "coaching_notes": "string with any notes from the document",
+          "superset_with": "string or null — name of the exercise this is paired with if it is a superset",
+          "coaching_notes": "string — any pro tips or coaching notes from the document for this exercise",
           "sets": [
             {
               "set_number": number,
               "reps_min": number,
               "reps_max": number,
-              "set_type": "working | drop | amrap | bodyweight",
-              "special_instructions": "string or null for any special techniques like drop sets holds or pulses"
+              "set_type": "warmup | working | backoff | drop | amrap | myorep | tempo | pause",
+              "special_instructions": "string or null — any techniques like drop sets, holds, pulses, ISO holds, pauses"
             }
           ]
         }
@@ -62,6 +62,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   ]
 }
+
+SET TYPE RULES — apply these exactly:
+- "warmup": any set described as warm-up, feeder set, activation set, primer set, or prep set
+- "working": standard working sets (Working Set 1, Working Set 2, etc.)
+- "backoff": back-off sets, down sets, or sets at reduced weight after the main work
+- "drop": drop sets or any set where weight is immediately reduced and reps continue
+- "amrap": as many reps as possible sets
+- "myorep": myo-rep or rest-pause sets
+- "tempo": sets with prescribed tempo e.g. 3-1-1
+- "pause": sets with a pause or hold at a specific point in the movement
+
+SET COUNTING RULES — critical:
+- If an exercise lists "1 warm-up/feeder set", include it as set_number 1 with set_type "warmup"
+- If it then lists Working Set 1, Working Set 2, Working Set 3 — those become set_number 2, 3, 4
+- NEVER skip a set. If 4 sets are listed (1 warm-up + 3 working), output exactly 4 set objects
+- If rep counts are not specified for warm-up/feeder sets, use reps_min: 12, reps_max: 15 as a default
+- If a set says "Drop set both arms on last set", mark that set's set_type as "drop"
 
 Here is the document text:
 
