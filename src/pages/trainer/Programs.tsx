@@ -55,27 +55,26 @@ function formatReps(min: number, max: number): string {
 async function resolveOrCreateExercise(name: string, trainerId: string): Promise<string> {
   const trimmed = name.trim()
 
-  // 1. Try global exercises (case-insensitive)
-  const { data: globalMatch, error: globalErr } = await supabase
+  // 1. Try global exercises (case-insensitive) — plain array query avoids
+  //    the 400 that occurs when .limit(1) and .maybeSingle() are combined.
+  const { data: globalRows, error: globalErr } = await supabase
     .from('exercises')
     .select('id')
     .ilike('name', trimmed)
     .eq('is_global', true)
     .limit(1)
-    .maybeSingle()
   if (globalErr) console.warn('[resolveOrCreate] global lookup error:', globalErr)
-  if (globalMatch?.id) return globalMatch.id
+  if (globalRows && globalRows.length > 0) return globalRows[0].id
 
   // 2. Try trainer's custom exercises
-  const { data: trainerMatch, error: trainerErr } = await supabase
+  const { data: trainerRows, error: trainerErr } = await supabase
     .from('exercises')
     .select('id')
     .ilike('name', trimmed)
     .eq('trainer_id', trainerId)
     .limit(1)
-    .maybeSingle()
   if (trainerErr) console.warn('[resolveOrCreate] trainer lookup error:', trainerErr)
-  if (trainerMatch?.id) return trainerMatch.id
+  if (trainerRows && trainerRows.length > 0) return trainerRows[0].id
 
   // 3. Create a new trainer-custom exercise
   const { data: newEx, error: insertErr } = await supabase
