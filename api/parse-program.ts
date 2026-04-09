@@ -74,6 +74,12 @@ ${documentText}`,
     if (!response.ok) {
       const errBody = await response.text()
       console.error('Claude API error:', response.status, errBody)
+      if (response.status === 529) {
+        return res.status(503).json({ error: 'The AI service is temporarily overloaded. Please wait a moment and try again.' })
+      }
+      if (response.status === 429) {
+        return res.status(503).json({ error: 'API rate limit reached. Please wait a minute and try again.' })
+      }
       return res.status(502).json({ error: `Claude API error: ${response.status} — ${errBody.substring(0, 200)}` })
     }
 
