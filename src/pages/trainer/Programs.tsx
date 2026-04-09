@@ -459,6 +459,11 @@ export default function Programs() {
     setImportStep('saving')
     setImportError('')
 
+    // Track the cycle ID so we can roll it back if anything fails mid-save.
+    // Without this, a failed import leaves a partial cycle in the library and
+    // re-trying creates a duplicate.
+    let createdCycleId: string | null = null
+
     try {
       const trainerId = profile.id
 
@@ -479,6 +484,7 @@ export default function Programs() {
         .single()
 
       if (!cycle) throw new Error('Failed to create training cycle')
+      createdCycleId = cycle.id
 
       // 2. Save each day + exercises
       for (const day of parsedData.days) {
@@ -550,6 +556,11 @@ export default function Programs() {
       setImportName('')
       setImportError('')
     } catch (err: any) {
+      // Rollback: delete the partially-written cycle so re-trying doesn't duplicate
+      if (createdCycleId) {
+        await supabase.from('training_cycles').delete().eq('id', createdCycleId)
+        createdCycleId = null
+      }
       setImportError(err.message ?? 'Failed to save program')
       setImportStep('review')
     }
