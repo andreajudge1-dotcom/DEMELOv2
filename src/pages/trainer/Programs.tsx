@@ -194,6 +194,10 @@ async function copyProgram(
       .order('position')
 
     for (const we of wes ?? []) {
+      // Never copy a workout_exercise that has no exercise_id — it would
+      // create an orphaned row that breaks every client session for this workout.
+      if (!we.exercise_id) continue
+
       const { data: newWE } = await supabase
         .from('workout_exercises')
         .insert({
@@ -215,7 +219,7 @@ async function copyProgram(
         .order('set_number')
 
       if (sets?.length) {
-        await supabase.from('workout_set_prescriptions').insert(
+        const { error: copySetErr } = await supabase.from('workout_set_prescriptions').insert(
           sets.map(s => ({
             workout_exercise_id: newWE.id,
             set_number: s.set_number,
@@ -228,6 +232,7 @@ async function copyProgram(
             cue: s.cue ?? null,
           }))
         )
+        if (copySetErr) console.error('[copyProgram] sets insert error:', copySetErr)
       }
     }
   }
@@ -513,19 +518,26 @@ export default function Programs() {
           if (!we) continue
 
           if (ex.sets.length > 0) {
-            await supabase.from('workout_set_prescriptions').insert(
+            const { error: setsErr } = await supabase.from('workout_set_prescriptions').insert(
               ex.sets.map(s => ({
                 workout_exercise_id: we.id,
                 set_number: s.set_number,
                 set_type: normalizeSetType(s.set_type),
-                reps: formatReps(s.reps_min, s.reps_max) || null,
+                reps: formatReps(s.reps_min ?? 0, s.reps_max ?? 0) || null,
                 rpe_target: null,
-                load_modifier: s.special_instructions || null,
+                // Truncate to 200 chars — load_modifier is a short hint field
+                load_modifier: s.special_instructions
+                  ? String(s.special_instructions).substring(0, 200)
+                  : null,
                 hold_seconds: null,
                 tempo: null,
                 cue: null,
               }))
             )
+            if (setsErr) {
+              console.error('[import] sets insert error for', ex.name, setsErr)
+              throw new Error(`Failed to save sets for "${ex.name}": ${setsErr.message} (code: ${setsErr.code})`)
+            }
           }
         }
       }
