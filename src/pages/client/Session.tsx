@@ -110,6 +110,12 @@ export default function ClientSession() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [cancelling, setCancelling] = useState(false)
 
+  // Set when the workout template has zero exercises (typically because the
+  // program was vault-imported into a state with no workout_exercises rows,
+  // OR an old program had its rows wiped by fix_workout_exercise_null_ids.sql).
+  // Shown to the client as a friendly empty-state instead of a blank page.
+  const [emptyWorkout, setEmptyWorkout] = useState(false)
+
   // Rest timer
   const [restTimer, setRestTimer] = useState<number | null>(null)
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -182,10 +188,53 @@ export default function ClientSession() {
       .eq('workout_id', workoutId)
       .order('position')
 
-    if (!wExercises) return
+    if (!wExercises || wExercises.length === 0) {
+      // The workout template itself has no exercises. This usually means
+      // either (a) the trainer assigned a vault-imported program whose
+      // workout_exercises rows were never written, or (b) the rows existed
+      // but had null exercise_id and were wiped by fix_workout_exercise_null_ids.sql.
+      // Either way, there's nothing to seed and the client should see a
+      // helpful message instead of a blank screen.
+      setEmptyWorkout(true)
+      return
+    }
+
+    // CRITICAL: filter out any workout_exercises rows that have a null
+    // exercise_id. session_exercises.exercise_id is NOT NULL, so trying to
+    // insert one with a null FK throws a 400 and silently breaks the entire
+    // session seed (every subsequent insert in the loop also fails). This
+    // happens when the trainer's underlying `exercises` rows were deleted
+    // and the FK was nulled by `ON DELETE SET NULL`.
+    const validExercises = wExercises.filter((we: any) => !!we.exercise_id)
+    const skippedCount = wExercises.length - validExercises.length
+    if (skippedCount > 0) {
+      console.warn(
+        `[Session] Skipped ${skippedCount} workout_exercises with null exercise_id ` +
+        `for workout ${workoutId}. The trainer needs to re-add these in the program builder.`
+      )
+    }
+    if (validExercises.length === 0) {
+      setEmptyWorkout(true)
+      return
+    }
+
     const cards: ExerciseCard[] = []
 
-    for (const we of wExercises) {
+    // Fallback name lookup for any rows where the embedded join didn't return
+    // an exercise (RLS edge case for trainer-custom exercises).
+    const missingIds = validExercises
+      .filter((we: any) => !we.exercises?.name && we.exercise_id)
+      .map((we: any) => we.exercise_id as string)
+    let nameById = new Map<string, { name: string; primary_muscle: string }>()
+    if (missingIds.length > 0) {
+      const { data: exRows } = await supabase
+        .from('exercises')
+        .select('id, name, primary_muscle')
+        .in('id', missingIds)
+      nameById = new Map((exRows ?? []).map((e: any) => [e.id, { name: e.name, primary_muscle: e.primary_muscle ?? '' }]))
+    }
+
+    for (const we of validExercises) {
       const { data: se } = await supabase
         .from('session_exercises')
         .insert({ session_id: sessId, exercise_id: we.exercise_id, workout_exercise_id: we.id, order_index: we.position })
@@ -211,11 +260,14 @@ export default function ClientSession() {
         })
       }
 
+      const joinName = (we as any).exercises?.name as string | undefined
+      const joinMuscle = (we as any).exercises?.primary_muscle as string | undefined
+      const fallback = we.exercise_id ? nameById.get(we.exercise_id) : undefined
       cards.push({
         session_exercise_id: se.id,
         exercise_id: we.exercise_id,
-        exercise_name: (we as any).exercises?.name ?? 'Exercise',
-        primary_muscle: (we as any).exercises?.primary_muscle ?? '',
+        exercise_name: joinName || fallback?.name || 'Exercise',
+        primary_muscle: joinMuscle || fallback?.primary_muscle || '',
         order_index: we.position,
         skipped: false, skip_note: '',
         sets,
@@ -226,6 +278,20 @@ export default function ClientSession() {
 
   async function buildCards(sesExercises: any[]) {
     const cards: ExerciseCard[] = []
+
+    // Fallback name lookup for session_exercises whose embedded join missed.
+    const missingIds = sesExercises
+      .filter((se: any) => !se.exercises?.name && se.exercise_id)
+      .map((se: any) => se.exercise_id as string)
+    let nameById = new Map<string, { name: string; primary_muscle: string }>()
+    if (missingIds.length > 0) {
+      const { data: exRows } = await supabase
+        .from('exercises')
+        .select('id, name, primary_muscle')
+        .in('id', missingIds)
+      nameById = new Map((exRows ?? []).map((e: any) => [e.id, { name: e.name, primary_muscle: e.primary_muscle ?? '' }]))
+    }
+
     for (const se of sesExercises) {
       const { data: setsData } = await supabase
         .from('session_sets')
@@ -245,11 +311,14 @@ export default function ClientSession() {
         logged: s.weight_kg != null && s.reps_completed != null,
       }))
 
+      const joinName = se.exercises?.name as string | undefined
+      const joinMuscle = se.exercises?.primary_muscle as string | undefined
+      const fallback = se.exercise_id ? nameById.get(se.exercise_id) : undefined
       cards.push({
         session_exercise_id: se.id,
         exercise_id: se.exercise_id,
-        exercise_name: se.exercises?.name ?? 'Exercise',
-        primary_muscle: se.exercises?.primary_muscle ?? '',
+        exercise_name: joinName || fallback?.name || 'Exercise',
+        primary_muscle: joinMuscle || fallback?.primary_muscle || '',
         order_index: se.order_index,
         skipped: se.skipped ?? false,
         skip_note: se.skip_note ?? '',
@@ -287,15 +356,17 @@ export default function ClientSession() {
     ))
   }
 
-  async function logSet(exIdx: number, setIdx: number) {
+  // Auto-log variant used by the RPE selector — RPE state hasn't been applied yet
+  // when onChange fires so we pass the new value directly instead of reading state.
+  async function autoLogOnRpe(exIdx: number, setIdx: number, rpeValue: number) {
     const set = exercises[exIdx].sets[setIdx]
     const w = parseFloat(set.weight)
     const r = parseInt(set.reps_done)
-    if (isNaN(w) || isNaN(r) || set.rpe_felt === null) return
+    if (isNaN(w) || isNaN(r)) return
 
-    await supabase.from('session_sets').update({ weight_kg: w, reps_completed: r, rpe_actual: set.rpe_felt }).eq('id', set.session_set_id)
+    await supabase.from('session_sets').update({ weight_kg: w, reps_completed: r, rpe_actual: rpeValue }).eq('id', set.session_set_id)
     setExercises(prev => prev.map((ex, ei) =>
-      ei !== exIdx ? ex : { ...ex, sets: ex.sets.map((s, si) => si !== setIdx ? s : { ...s, logged: true }) }
+      ei !== exIdx ? ex : { ...ex, sets: ex.sets.map((s, si) => si !== setIdx ? s : { ...s, rpe_felt: rpeValue, logged: true }) }
     ))
     setRestTimer(90)
   }
@@ -439,6 +510,38 @@ export default function ClientSession() {
     )
   }
 
+  // Empty workout — the template has no exercises (vault import failure or
+  // historical data wiped by the cleanup migration). Show a friendly state
+  // and let the user back out to home, where they can pick a different day
+  // or contact their trainer. The session is auto-deleted on bail so it
+  // doesn't linger in the DB as an orphaned in_progress row.
+  if (emptyWorkout) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center px-6">
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] w-full max-w-md p-6 text-center">
+          <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[#C9A84C]/10 flex items-center justify-center">
+            <svg className="w-6 h-6 text-[#C9A84C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M12 5a7 7 0 110 14 7 7 0 010-14z" />
+            </svg>
+          </div>
+          <h2 className="font-bebas text-2xl text-white tracking-wide mb-2">No exercises yet</h2>
+          <p className="font-barlow text-sm text-white/60 mb-5">
+            This workout day doesn't have any exercises set up. Your trainer needs to add them in the program builder before you can start the session.
+          </p>
+          <button
+            onClick={async () => {
+              if (sessionId) await supabase.from('sessions').delete().eq('id', sessionId)
+              navigate('/client/home')
+            }}
+            className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-6 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
+          >
+            Back to home
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (completed && session) {
     const totalSets = exercises.reduce((sum, ex) => sum + ex.sets.filter(s => s.logged).length, 0)
     const prescribedRpeAvg = (() => {
@@ -506,6 +609,14 @@ export default function ClientSession() {
         )}
 
         {/* ── Exercises ── */}
+        {exercises.length === 0 && (
+          <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-8 text-center mb-4">
+            <p className="font-bebas text-xl text-white/40 tracking-wide mb-2">No exercises found</p>
+            <p className="font-barlow text-sm text-white/30">
+              This workout has no exercises programmed. Ask your trainer to add some, or finish the session if this looks wrong.
+            </p>
+          </div>
+        )}
         <div className="flex flex-col gap-4">
           {exercises.map((ex, exIdx) => (
             <div
@@ -539,7 +650,7 @@ export default function ClientSession() {
               {/* Sets (hidden if skipped) */}
               {!ex.skipped && (
                 <>
-                  <div className="grid grid-cols-[32px_50px_50px_40px_56px_56px_56px_56px] gap-1 px-1 mb-1">
+                  <div className="grid grid-cols-[32px_50px_50px_40px_56px_56px_56px] gap-1 px-1 mb-1">
                     <span className="font-barlow text-[9px] text-white/25 uppercase">Set</span>
                     <span className="font-barlow text-[9px] text-white/25 uppercase">Type</span>
                     <span className="font-barlow text-[9px] text-white/25 uppercase">Reps</span>
@@ -547,30 +658,34 @@ export default function ClientSession() {
                     <span className="font-barlow text-[9px] text-white/25 uppercase">Wt</span>
                     <span className="font-barlow text-[9px] text-white/25 uppercase">Reps</span>
                     <span className="font-barlow text-[9px] text-white/25 uppercase">RPE</span>
-                    <span />
                   </div>
                   {ex.sets.map((set, setIdx) => {
                     const td = SET_TYPE_COLORS[set.set_type] ?? SET_TYPE_COLORS.working
-                    const canLog = set.weight !== '' && set.reps_done !== '' && set.rpe_felt !== null
                     return (
-                      <div key={set.session_set_id} className={`grid grid-cols-[32px_50px_50px_40px_56px_56px_56px_56px] gap-1 items-center mb-1 rounded-lg px-1 py-1 ${set.logged ? 'bg-green-500/5 border border-green-500/20' : ''}`}>
+                      <div key={set.session_set_id} className={`grid grid-cols-[32px_50px_50px_40px_56px_56px_56px] gap-1 items-center mb-1 rounded-lg px-1 py-1 transition-colors ${set.logged ? 'bg-green-500/5 border border-green-500/20' : ''}`}>
                         <span className="font-barlow text-xs text-white/30 text-center">{set.set_number}</span>
                         <span className="font-barlow text-[9px] font-semibold px-1 py-0.5 rounded-full text-center capitalize" style={{ backgroundColor: td.bg, color: td.text }}>{set.set_type}</span>
                         <span className="font-barlow text-xs text-white/50 text-center">{set.prescribed_reps || '—'}</span>
                         <span className="font-barlow text-xs text-white/30 text-center">{set.rpe_target ?? '—'}</span>
                         <input type="number" value={set.weight} onChange={e => updateSet(exIdx, setIdx, 'weight', e.target.value)} disabled={set.logged} placeholder="lbs" className="bg-[#0A0A0A] border border-[#2C2C2E] rounded px-1 py-1 text-white font-barlow text-xs text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40" />
                         <input type="number" value={set.reps_done} onChange={e => updateSet(exIdx, setIdx, 'reps_done', e.target.value)} disabled={set.logged} placeholder="reps" className="bg-[#0A0A0A] border border-[#2C2C2E] rounded px-1 py-1 text-white font-barlow text-xs text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40" />
-                        <select value={set.rpe_felt ?? ''} onChange={e => updateSet(exIdx, setIdx, 'rpe_felt', e.target.value ? parseFloat(e.target.value) : null)} disabled={set.logged} className="bg-[#0A0A0A] border border-[#2C2C2E] rounded px-0.5 py-1 text-white font-barlow text-xs text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40 appearance-none">
+                        <select
+                          value={set.rpe_felt ?? ''}
+                          disabled={set.logged}
+                          onChange={e => {
+                            const rpeVal = e.target.value ? parseFloat(e.target.value) : null
+                            if (rpeVal !== null && set.weight !== '' && set.reps_done !== '') {
+                              // All fields filled — auto-save immediately
+                              autoLogOnRpe(exIdx, setIdx, rpeVal)
+                            } else {
+                              updateSet(exIdx, setIdx, 'rpe_felt', rpeVal)
+                            }
+                          }}
+                          className="bg-[#0A0A0A] border border-[#2C2C2E] rounded px-0.5 py-1 text-white font-barlow text-xs text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40 appearance-none"
+                        >
                           <option value="">—</option>
                           {RPE_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
                         </select>
-                        {set.logged ? (
-                          <div className="flex items-center justify-center">
-                            <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                          </div>
-                        ) : (
-                          <button onClick={() => logSet(exIdx, setIdx)} disabled={!canLog} className={`font-barlow text-[10px] font-semibold px-1.5 py-1 rounded transition-colors ${canLog ? 'bg-[#C9A84C] text-black' : 'bg-[#2C2C2E] text-white/20'}`}>Log</button>
-                        )}
                       </div>
                     )
                   })}
