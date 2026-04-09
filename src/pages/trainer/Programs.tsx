@@ -525,13 +525,14 @@ export default function Programs() {
                 set_type: normalizeSetType(s.set_type),
                 reps: formatReps(s.reps_min ?? 0, s.reps_max ?? 0) || null,
                 rpe_target: null,
-                // Truncate to 200 chars — load_modifier is a short hint field
-                load_modifier: s.special_instructions
-                  ? String(s.special_instructions).substring(0, 200)
-                  : null,
+                load_modifier: null,
                 hold_seconds: null,
                 tempo: null,
-                cue: null,
+                // special_instructions is a text note — store in cue, not load_modifier
+                // (load_modifier is numeric and would reject any string value)
+                cue: s.special_instructions
+                  ? String(s.special_instructions).substring(0, 500)
+                  : null,
               }))
             )
             if (setsErr) {
