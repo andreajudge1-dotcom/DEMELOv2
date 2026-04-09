@@ -281,6 +281,7 @@ export default function Programs() {
   const [parsedData, setParsedData] = useState<ParsedProgram | null>(null)
   const [importName, setImportName] = useState('')
   const importFileRef = useRef<HTMLInputElement>(null)
+  const importSavingRef = useRef(false) // guard against double-fire
 
   useEffect(() => { fetchAll() }, [])
 
@@ -456,6 +457,10 @@ export default function Programs() {
 
   async function saveImportedProgram() {
     if (!parsedData || !profile?.id) return
+    // Ref-based guard — prevents a second call from firing if the user
+    // double-clicks before React re-renders to hide the button.
+    if (importSavingRef.current) return
+    importSavingRef.current = true
     setImportStep('saving')
     setImportError('')
 
@@ -549,8 +554,7 @@ export default function Programs() {
         }
       }
 
-      // Done — refresh library and close modal
-      await fetchAll()
+      // Success — close modal first, then refresh library
       setImportStep(null)
       setParsedData(null)
       setImportName('')
@@ -559,10 +563,14 @@ export default function Programs() {
       // Rollback: delete the partially-written cycle so re-trying doesn't duplicate
       if (createdCycleId) {
         await supabase.from('training_cycles').delete().eq('id', createdCycleId)
-        createdCycleId = null
       }
       setImportError(err.message ?? 'Failed to save program')
       setImportStep('review')
+    } finally {
+      // Always release the guard so the button works again after an error
+      importSavingRef.current = false
+      // Refresh library regardless of outcome so the UI is up to date
+      await fetchAll()
     }
   }
 
@@ -1130,7 +1138,7 @@ export default function Programs() {
                 </button>
                 <button
                   onClick={saveImportedProgram}
-                  disabled={!importName.trim()}
+                  disabled={!importName.trim() || importSavingRef.current}
                   className="flex-1 py-3 bg-[#C9A84C] text-black font-bebas text-base tracking-widest rounded-xl hover:bg-[#E2C070] transition-colors disabled:opacity-40"
                 >
                   Save to Library
