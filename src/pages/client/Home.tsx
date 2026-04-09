@@ -98,6 +98,7 @@ export default function ClientHome() {
   const [startingSession, setStartingSession] = useState(false)
   const [dayExerciseNames, setDayExerciseNames] = useState<Record<string, string[]>>({})
   const [showDayPicker, setShowDayPicker] = useState(false)
+  const [inProgressSession, setInProgressSession] = useState<{ id: string; workout_id: string | null } | null>(null)
   const [showExtraSheet, setShowExtraSheet] = useState(false)
   const [extraType, setExtraType] = useState<string | null>(null)
   const [extraDuration, setExtraDuration] = useState('')
@@ -120,6 +121,17 @@ export default function ClientHome() {
 
     if (!clientRow) { setLoading(false); return }
     setClient(clientRow)
+
+    // Check for an existing in-progress session so we can offer Resume instead of Start
+    const { data: inProgressRow } = await supabase
+      .from('sessions')
+      .select('id, workout_id')
+      .eq('client_id', clientRow.id)
+      .eq('status', 'in_progress')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    setInProgressSession(inProgressRow ?? null)
 
     const { data: trainerRow } = await supabase
       .from('profiles')
@@ -271,7 +283,10 @@ export default function ClientHome() {
       .select('id')
       .single()
     setStartingSession(false)
-    if (data) navigate(`/client/session/${data.id}`)
+    if (data) {
+      setInProgressSession(null)
+      navigate(`/client/session/${data.id}`)
+    }
     if (error) console.error('Start session error:', error)
   }
 
@@ -529,13 +544,22 @@ export default function ClientHome() {
                 </div>
                 <span className="font-barlow text-sm text-green-400">Completed</span>
               </div>
-              <button
-                onClick={() => startSession()}
-                disabled={startingSession}
-                className="w-full bg-white/[0.03] backdrop-blur-sm border border-[#C9A84C]/30 rounded-xl font-barlow text-sm text-[#C9A84C] py-3 hover:bg-[#C9A84C]/10 transition-colors"
-              >
-                {startingSession ? 'Starting...' : 'Start Again'}
-              </button>
+              {inProgressSession ? (
+                <button
+                  onClick={() => navigate(`/client/session/${inProgressSession.id}`)}
+                  className="w-full bg-[#C9A84C] text-black font-bebas text-lg tracking-widest rounded-xl py-3 hover:bg-[#E2C070] transition-colors"
+                >
+                  RESUME SESSION
+                </button>
+              ) : (
+                <button
+                  onClick={() => startSession()}
+                  disabled={startingSession}
+                  className="w-full bg-white/[0.03] backdrop-blur-sm border border-[#C9A84C]/30 rounded-xl font-barlow text-sm text-[#C9A84C] py-3 hover:bg-[#C9A84C]/10 transition-colors"
+                >
+                  {startingSession ? 'Starting...' : 'Start Again'}
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -565,14 +589,32 @@ export default function ClientHome() {
                 View today's workout
               </button>
 
-              {/* START SESSION button */}
-              <button
-                onClick={() => startSession()}
-                disabled={startingSession}
-                className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-all min-h-[56px] disabled:opacity-50 shadow-[0_0_20px_rgba(201,168,76,0.25)]"
-              >
-                {startingSession ? 'STARTING...' : 'START SESSION'}
-              </button>
+              {/* RESUME or START SESSION */}
+              {inProgressSession ? (
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => navigate(`/client/session/${inProgressSession.id}`)}
+                    className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-all min-h-[56px] shadow-[0_0_20px_rgba(201,168,76,0.25)]"
+                  >
+                    RESUME SESSION
+                  </button>
+                  <button
+                    onClick={() => startSession()}
+                    disabled={startingSession}
+                    className="w-full font-barlow text-xs text-white/30 hover:text-white/60 transition-colors py-2"
+                  >
+                    {startingSession ? 'Starting...' : 'Start fresh instead'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => startSession()}
+                  disabled={startingSession}
+                  className="w-full bg-[#C9A84C] text-black font-bebas text-xl tracking-widest rounded-xl py-4 hover:bg-[#E2C070] transition-all min-h-[56px] disabled:opacity-50 shadow-[0_0_20px_rgba(201,168,76,0.25)]"
+                >
+                  {startingSession ? 'STARTING...' : 'START SESSION'}
+                </button>
+              )}
             </>
           )}
         </div>
