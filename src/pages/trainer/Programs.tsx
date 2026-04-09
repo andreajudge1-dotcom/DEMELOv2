@@ -56,27 +56,29 @@ async function resolveOrCreateExercise(name: string, trainerId: string): Promise
   const trimmed = name.trim()
 
   // 1. Try global exercises (case-insensitive)
-  const { data: globalMatch } = await supabase
+  const { data: globalMatch, error: globalErr } = await supabase
     .from('exercises')
     .select('id')
     .ilike('name', trimmed)
     .eq('is_global', true)
     .limit(1)
     .maybeSingle()
+  if (globalErr) console.warn('[resolveOrCreate] global lookup error:', globalErr)
   if (globalMatch?.id) return globalMatch.id
 
   // 2. Try trainer's custom exercises
-  const { data: trainerMatch } = await supabase
+  const { data: trainerMatch, error: trainerErr } = await supabase
     .from('exercises')
     .select('id')
     .ilike('name', trimmed)
     .eq('trainer_id', trainerId)
     .limit(1)
     .maybeSingle()
+  if (trainerErr) console.warn('[resolveOrCreate] trainer lookup error:', trainerErr)
   if (trainerMatch?.id) return trainerMatch.id
 
   // 3. Create a new trainer-custom exercise
-  const { data: newEx } = await supabase
+  const { data: newEx, error: insertErr } = await supabase
     .from('exercises')
     .insert({
       trainer_id: trainerId,
@@ -93,7 +95,12 @@ async function resolveOrCreateExercise(name: string, trainerId: string): Promise
     .select('id')
     .single()
 
-  if (!newEx?.id) throw new Error(`Failed to create exercise: ${trimmed}`)
+  if (insertErr || !newEx?.id) {
+    console.error('[resolveOrCreateExercise] insert failed:', insertErr)
+    throw new Error(
+      `Failed to create exercise "${trimmed}": ${insertErr?.message ?? 'no data returned'} (code: ${insertErr?.code ?? '?'}, hint: ${insertErr?.hint ?? ''})`
+    )
+  }
   return newEx.id
 }
 
