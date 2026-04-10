@@ -24,7 +24,7 @@ interface ExercisePickerProps {
 
 const MUSCLE_GROUPS = [
   'All', 'Quads', 'Hamstrings', 'Glutes', 'Calves',
-  'Pecs', 'Lats', 'Traps', 'Erectors',
+  'Chest', 'Lats', 'Traps', 'Erectors',
   'Delts', 'Biceps', 'Triceps', 'Forearms',
   'Core', 'Obliques', 'Compound', 'Cardio'
 ]

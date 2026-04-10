@@ -21,7 +21,7 @@ interface Exercise {
 
 const MUSCLE_GROUPS = [
   'All', 'Quads', 'Hamstrings', 'Glutes', 'Calves',
-  'Pecs', 'Lats', 'Traps', 'Erectors',
+  'Chest', 'Lats', 'Traps', 'Erectors',
   'Delts', 'Biceps', 'Triceps', 'Forearms',
   'Core', 'Obliques', 'Compound', 'Cardio'
 ]
@@ -327,7 +327,7 @@ export default function Exercises() {
                     value={newExercise.primary_muscle}
                     onChange={val => setNewExercise(f => ({ ...f, primary_muscle: val }))}
                     placeholder="Select..."
-                    options={['Quads','Hamstrings','Glutes','Calves','Pecs','Lats','Traps','Erectors','Delts','Biceps','Triceps','Forearms','Core','Obliques'].map(m => ({ value: m, label: m }))}
+                    options={['Quads','Hamstrings','Glutes','Calves','Chest','Lats','Traps','Erectors','Delts','Biceps','Triceps','Forearms','Core','Obliques'].map(m => ({ value: m, label: m }))}
                     className="w-full"
                   />
                 </div>
