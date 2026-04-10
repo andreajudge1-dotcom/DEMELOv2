@@ -1,5 +1,8 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useNavigationGuardContext } from '../contexts/NavigationGuardContext'
+import NavigationGuardModal from '../components/NavigationGuardModal'
 
 const NAV_ITEMS = [
   { path: '/trainer/dashboard', label: 'Dashboard' },
@@ -17,6 +20,17 @@ const NAV_ITEMS = [
 export default function TrainerLayout() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const { isDirty, message } = useNavigationGuardContext()
+  const [pendingPath, setPendingPath] = useState<string | null>(null)
+
+  function guardedNavigate(path: string) {
+    if (isDirty) {
+      setPendingPath(path)
+    } else {
+      navigate(path)
+    }
+  }
 
   async function handleSignOut() {
     await signOut()
@@ -35,21 +49,22 @@ export default function TrainerLayout() {
 
         {/* Nav */}
         <nav className="flex-1 p-4 flex flex-col gap-1">
-          {NAV_ITEMS.map(item => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                `px-4 py-2.5 rounded-lg font-barlow text-sm transition-colors ${
+          {NAV_ITEMS.map(item => {
+            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/')
+            return (
+              <button
+                key={item.path}
+                onClick={() => guardedNavigate(item.path)}
+                className={`w-full text-left px-4 py-2.5 rounded-lg font-barlow text-sm transition-colors ${
                   isActive
                     ? 'bg-[#C9A84C] text-black font-semibold'
                     : 'text-white/60 hover:text-white hover:bg-white/[0.05]'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+                }`}
+              >
+                {item.label}
+              </button>
+            )
+          })}
         </nav>
 
         {/* User + Sign out */}
@@ -78,6 +93,18 @@ export default function TrainerLayout() {
       <main className="flex-1 ml-64 p-8 min-h-screen">
         <Outlet />
       </main>
+
+      {/* Navigation guard modal */}
+      {pendingPath && (
+        <NavigationGuardModal
+          title="Unsaved Changes"
+          body={message || 'You have unsaved work. Are you sure you want to leave?'}
+          stayLabel="Keep Editing"
+          leaveLabel="Leave without saving"
+          onStay={() => setPendingPath(null)}
+          onLeave={() => { navigate(pendingPath); setPendingPath(null) }}
+        />
+      )}
     </div>
   )
 }

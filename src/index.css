@@ -3,8 +3,32 @@
 @tailwind utilities;
 
 @layer base {
+  html, :root {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-[#0A0A0A] text-white antialiased;
     font-family: 'Barlow', sans-serif;
+    color-scheme: dark;
+  }
+
+  /* Force all native form controls into dark mode globally */
+  select,
+  input[type="number"],
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  textarea {
+    color-scheme: dark;
+    background-color: #1C1C1E;
+    color: white;
+    border-color: #2C2C2E;
+  }
+
+  /* Dark option list in supporting browsers */
+  select option {
+    background-color: #1C1C1E;
+    color: white;
   }
 }

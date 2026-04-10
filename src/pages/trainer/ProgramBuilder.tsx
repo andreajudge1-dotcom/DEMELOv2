@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import ExercisePicker from '../../components/ExercisePicker'
 import { useUnsavedWarning } from '../../hooks/useUnsavedWarning'
+import { useNavigationGuard } from '../../hooks/useNavigationGuard'
 import SetPrescriptionEditor from '../../components/SetPrescriptionEditor'
 import type { SetPrescription } from '../../components/SetPrescriptionEditor'
 import Select from '../../components/Select'
-
-interface Client {
-  id: string
-  full_name: string
-  status: string
-}
 
 interface WorkoutExercise {
   id: string
@@ -61,15 +56,7 @@ function makeDefaultSet(num: number): SetPrescription {
 export default function ProgramBuilder() {
   const { profile } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
   const { id: editProgramId } = useParams<{ id: string }>()
-  const [searchParams] = useSearchParams()
-  const preselectedClientId = searchParams.get('clientId')
-  const [importBanner, setImportBanner] = useState<string | null>(null)
-  const [unmatchedExercises, setUnmatchedExercises] = useState<Set<string>>(new Set())
-
-  const [clients, setClients] = useState<Client[]>([])
-  const clientLocked = !!preselectedClientId
 
   const [form, setForm] = useState({
     name: '',
@@ -77,7 +64,6 @@ export default function ProgramBuilder() {
     numWeeks: 4,
     numDays: 4,
     coverPhotoUrl: COVER_OPTIONS[0],
-    assignToClientId: preselectedClientId ?? '',
     tags: [] as string[],
   })
   const [step, setStep] = useState<'setup' | 'builder'>('setup')
@@ -90,6 +76,10 @@ export default function ProgramBuilder() {
   const [activeDayIndex, setActiveDayIndex] = useState(0)
 
   useUnsavedWarning(step === 'builder' && days.length > 0)
+  useNavigationGuard(
+    step === 'builder' && days.length > 0,
+    'You have unsaved changes to this program. Make sure to save before leaving or your work will be lost.'
+  )
 
   // Exercise picker
   const [showPicker, setShowPicker] = useState(false)
@@ -99,155 +89,11 @@ export default function ProgramBuilder() {
   const [expandedSummaryDays, setExpandedSummaryDays] = useState<Set<number>>(new Set())
   const [showSaveModal, setShowSaveModal] = useState(false)
 
-  useEffect(() => { fetchClients() }, [])
-
   useEffect(() => {
     if (editProgramId) {
       loadExistingProgram(editProgramId)
     }
   }, [editProgramId])
-
-  // Pre-fill from AI document parser
-  useEffect(() => {
-    const state = location.state as any
-    if (!state?.parsedProgram || editProgramId) return
-
-    const parsed = state.parsedProgram
-    const clientIdFromState = state.clientId ?? ''
-
-    setForm(prev => ({
-      ...prev,
-      name: parsed.program_name ?? prev.name,
-      numWeeks: parsed.weeks ?? prev.numWeeks,
-      numDays: parsed.days?.length ?? prev.numDays,
-      assignToClientId: clientIdFromState,
-    }))
-
-    // Build days from parsed data
-    async function prefill() {
-      // Fetch all exercises to match by name
-      const { data: allExercises } = await supabase
-        .from('exercises')
-        .select('id, name, is_unilateral, per_side')
-        .or(`is_global.eq.true,trainer_id.eq.${profile?.id}`)
-
-      const exerciseMap = new Map((allExercises ?? []).map(ex => [ex.name.toLowerCase(), ex]))
-      const unmatched = new Set<string>()
-
-      // ── Auto-create exercises that don't exist in the trainer's library ──
-      // Without this, workout_exercises gets exercise_id = NULL for unmatched
-      // names, which then breaks session_exercises seeding (NOT NULL constraint).
-      const namesToCreate = new Set<string>()
-      for (const day of (parsed.days ?? [])) {
-        for (const ex of (day.exercises ?? [])) {
-          const name = (ex.name ?? '').trim()
-          if (!name) continue
-          if (!exerciseMap.has(name.toLowerCase())) {
-            namesToCreate.add(name)
-          }
-        }
-      }
-
-      if (namesToCreate.size > 0 && profile?.id) {
-        const rows = Array.from(namesToCreate).map(name => ({
-          trainer_id: profile.id,
-          name,
-          is_global: false,
-          is_unilateral: false,
-          per_side: false,
-        }))
-        const { data: created } = await supabase
-          .from('exercises')
-          .insert(rows)
-          .select('id, name, is_unilateral, per_side')
-        for (const ex of (created ?? [])) {
-          exerciseMap.set(ex.name.toLowerCase(), ex)
-        }
-      }
-
-      const importedDays: WorkoutDay[] = (parsed.days ?? []).map((day: any, idx: number) => {
-        // Build superset groups — normalize exercise names into shared labels
-        const supersetLabels = new Map<string, string>()
-        let labelCounter = 0
-        const labelChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        for (const ex of (day.exercises ?? [])) {
-          if (ex.superset_with) {
-            const pairKey = [ex.name, ex.superset_with].sort().join('|||')
-            if (!supersetLabels.has(pairKey)) {
-              supersetLabels.set(pairKey, labelChars[labelCounter % 26])
-              labelCounter++
-            }
-          }
-        }
-
-        const exercises: WorkoutExercise[] = (day.exercises ?? []).map((ex: any, exIdx: number) => {
-          const match = exerciseMap.get(ex.name?.toLowerCase())
-          if (!match) unmatched.add(ex.name)
-
-          // Resolve superset group label
-          let ssGroup: string | null = null
-          if (ex.superset_with) {
-            const pairKey = [ex.name, ex.superset_with].sort().join('|||')
-            ssGroup = supersetLabels.get(pairKey) ?? null
-          }
-
-          const sets: SetPrescription[] = (ex.sets ?? []).map((s: any) => ({
-            set_number: s.set_number ?? 1,
-            set_type: s.set_type ?? 'working',
-            reps: s.reps_min && s.reps_max && s.reps_min !== s.reps_max
-              ? `${s.reps_min}-${s.reps_max}`
-              : String(s.reps_min ?? s.reps_max ?? ''),
-            rpe_target: null,
-            load_modifier: null,
-            hold_seconds: null,
-            tempo: '',
-            cue: s.special_instructions ?? '',
-          }))
-
-          return {
-            id: `import-${idx}-${exIdx}`,
-            exercise_id: match?.id ?? '',
-            exercise_name: ex.name ?? 'Unknown Exercise',
-            is_unilateral: match?.is_unilateral ?? false,
-            per_side: match?.per_side ?? false,
-            superset_group: ssGroup,
-            position: exIdx,
-            cue_override: ex.coaching_notes ?? '',
-            notes: '',
-            sets: sets.length > 0 ? sets : [makeDefaultSet(1), makeDefaultSet(2), makeDefaultSet(3)],
-          }
-        })
-
-        return {
-          id: null,
-          day_number: day.day_number ?? idx + 1,
-          name: day.day_name ?? `Day ${idx + 1}`,
-          focus: day.focus ?? '',
-          is_rest_day: false,
-          exercises,
-        }
-      })
-
-      setDays(importedDays)
-      setUnmatchedExercises(unmatched)
-      setImportBanner(`Imported from document`)
-      // Don't skip to builder — let trainer review setup first and save the cycle
-    }
-
-    prefill()
-    // Clear location state to prevent re-import on refresh
-    window.history.replaceState({}, document.title)
-  }, [location.state])
-
-  async function fetchClients() {
-    const { data } = await supabase
-      .from('clients')
-      .select('id, full_name, status')
-      .eq('trainer_id', profile?.id)
-      .eq('status', 'active')
-      .order('full_name')
-    setClients(data ?? [])
-  }
 
   async function loadExistingProgram(pid: string) {
     const { data: cycle } = await supabase
@@ -263,7 +109,6 @@ export default function ProgramBuilder() {
       numWeeks: cycle.num_weeks ?? 4,
       numDays: cycle.num_days,
       coverPhotoUrl: cycle.cover_photo_url ?? COVER_OPTIONS[0],
-      assignToClientId: '',
       tags: cycle.tags ?? [],
     })
     setProgramId(pid)
@@ -365,18 +210,16 @@ export default function ProgramBuilder() {
       return
     }
 
-    // Use pre-filled days from import if available, else init empty
-    if (days.length === 0 || !importBanner) {
-      const initialDays: WorkoutDay[] = Array.from({ length: form.numDays }, (_, i) => ({
-        id: null,
-        day_number: i + 1,
-        name: `Day ${i + 1}`,
-        focus: '',
-        is_rest_day: false,
-        exercises: [],
-      }))
-      setDays(initialDays)
-    }
+    // Init empty day shells — actual content is filled in the builder step
+    const initialDays: WorkoutDay[] = Array.from({ length: form.numDays }, (_, i) => ({
+      id: null,
+      day_number: i + 1,
+      name: `Day ${i + 1}`,
+      focus: '',
+      is_rest_day: false,
+      exercises: [],
+    }))
+    setDays(initialDays)
     setProgramId(data.id)
     setStep('builder')
     setSaving(false)
@@ -425,11 +268,23 @@ export default function ProgramBuilder() {
         const needsInsert = !workoutExerciseId || workoutExerciseId.startsWith('local-') || workoutExerciseId.startsWith('import-')
 
         if (needsInsert) {
+          // HARD GUARD: never insert a workout_exercises row without a valid
+          // exercise_id. The DB column is nullable for legacy reasons, but
+          // session_exercises.exercise_id is NOT NULL, so an orphaned row
+          // here breaks every future client session that loads this workout.
+          if (!exercise.exercise_id) {
+            console.warn(
+              `[ProgramBuilder] Skipping exercise "${exercise.exercise_name}" — no exercise_id linked. ` +
+              `This usually means the underlying exercise was deleted from the library.`
+            )
+            continue
+          }
+
           const { data: exData } = await supabase
             .from('workout_exercises')
             .insert({
               workout_id: workoutId,
-              exercise_id: exercise.exercise_id || null,
+              exercise_id: exercise.exercise_id,
               position: exercise.position,
               superset_group: exercise.superset_group ?? null,
               cue_override: exercise.cue_override || null,
@@ -465,110 +320,6 @@ export default function ProgramBuilder() {
               cue: set.cue || null,
             }))
           )
-        }
-      }
-    }
-
-    if (form.assignToClientId) {
-      // Always create a copy for the client — never assign the library original
-      const { data: srcCycle } = await supabase
-        .from('training_cycles')
-        .select('*')
-        .eq('id', programId)
-        .single()
-
-      if (srcCycle) {
-        const { data: clientCopy } = await supabase
-          .from('training_cycles')
-          .insert({
-            trainer_id: profile?.id,
-            name: srcCycle.name,
-            description: srcCycle.description ?? null,
-            cover_photo_url: srcCycle.cover_photo_url ?? null,
-            num_days: srcCycle.num_days,
-            num_weeks: srcCycle.num_weeks ?? 4,
-            is_template: false,
-            tags: srcCycle.tags ?? [],
-            parent_cycle_id: programId, // mark this as a client copy of the source
-          })
-          .select()
-          .single()
-
-        if (clientCopy) {
-          // Deep copy workouts → exercises → sets into the client copy
-          const { data: srcWorkouts } = await supabase
-            .from('workouts')
-            .select('id, day_number, name, focus')
-            .eq('cycle_id', programId)
-            .order('day_number')
-
-          for (const w of srcWorkouts ?? []) {
-            const { data: newW } = await supabase
-              .from('workouts')
-              .insert({ cycle_id: clientCopy.id, day_number: w.day_number, name: w.name, focus: w.focus ?? null })
-              .select()
-              .single()
-            if (!newW) continue
-
-            const { data: wes } = await supabase
-              .from('workout_exercises')
-              .select('id, exercise_id, position, superset_group, cue_override, notes')
-              .eq('workout_id', w.id)
-              .order('position')
-
-            for (const we of wes ?? []) {
-              const { data: newWE } = await supabase
-                .from('workout_exercises')
-                .insert({
-                  workout_id: newW.id,
-                  exercise_id: we.exercise_id,
-                  position: we.position,
-                  superset_group: (we as any).superset_group ?? null,
-                  cue_override: (we as any).cue_override ?? null,
-                  notes: we.notes ?? null,
-                })
-                .select()
-                .single()
-              if (!newWE) continue
-
-              const { data: sets } = await supabase
-                .from('workout_set_prescriptions')
-                .select('*')
-                .eq('workout_exercise_id', we.id)
-                .order('set_number')
-
-              if (sets?.length) {
-                await supabase.from('workout_set_prescriptions').insert(
-                  sets.map(s => ({
-                    workout_exercise_id: newWE.id,
-                    set_number: s.set_number,
-                    set_type: s.set_type,
-                    reps: s.reps ?? null,
-                    rpe_target: s.rpe_target ?? null,
-                    load_modifier: s.load_modifier ?? null,
-                    hold_seconds: s.hold_seconds ?? null,
-                    tempo: s.tempo ?? null,
-                    cue: s.cue ?? null,
-                  }))
-                )
-              }
-            }
-          }
-
-          // Deactivate any existing active assignment for this client
-          await supabase
-            .from('client_cycle_assignments')
-            .update({ is_active: false })
-            .eq('client_id', form.assignToClientId)
-            .eq('is_active', true)
-
-          // Link the copy to the client
-          await supabase.from('client_cycle_assignments').insert({
-            client_id: form.assignToClientId,
-            cycle_id: clientCopy.id,
-            is_active: true,
-            next_day_number: 1,
-          })
         }
       }
     }
@@ -720,27 +471,11 @@ export default function ProgramBuilder() {
             </div>
           </div>
 
-          {/* Assign to client */}
-          <div>
-            <label className="font-barlow text-xs text-white/40 uppercase tracking-widest block mb-2">
-              Assign to client <span className="normal-case text-white/25 ml-1">— optional</span>
-            </label>
-            {clientLocked ? (
-              <div className="bg-[#2C2C2E] border border-[#3A3A3C] rounded-lg px-4 py-2.5 font-barlow text-sm text-white/50">
-                {clients.find(c => c.id === form.assignToClientId)?.full_name ?? 'Client'}
-                <span className="text-white/25 ml-2 text-xs">— locked</span>
-              </div>
-            ) : clients.length > 0 ? (
-              <Select
-                value={form.assignToClientId}
-                onChange={val => setForm(f => ({ ...f, assignToClientId: val }))}
-                placeholder="No client — save to library only"
-                options={clients.map(c => ({ value: c.id, label: c.full_name }))}
-                className="w-full"
-              />
-            ) : (
-              <p className="font-barlow text-xs text-white/25 italic">No active clients yet — program will save to library</p>
-            )}
+          {/* Library notice */}
+          <div className="bg-[#C9A84C]/5 border border-[#C9A84C]/20 rounded-lg px-4 py-3">
+            <p className="font-barlow text-xs text-[#C9A84C]/80">
+              Programs are saved to your library. Assign them to clients anytime from the Programs page.
+            </p>
           </div>
 
           {/* Tags */}
@@ -789,17 +524,6 @@ export default function ProgramBuilder() {
 
   return (
     <div className="max-w-6xl">
-      {/* Import banner */}
-      {importBanner && (
-        <div className="mb-4 bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-xl px-4 py-3 flex items-center justify-between">
-          <div>
-            <p className="font-barlow text-sm text-[#C9A84C] font-semibold">{importBanner}</p>
-            <p className="font-barlow text-xs text-[#C9A84C]/60 mt-0.5">Review each day and exercise before saving.{unmatchedExercises.size > 0 ? ` ${unmatchedExercises.size} exercise${unmatchedExercises.size > 1 ? 's' : ''} need manual review.` : ''}</p>
-          </div>
-          <button onClick={() => setImportBanner(null)} className="text-[#C9A84C]/40 hover:text-[#C9A84C] text-lg">×</button>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
@@ -1000,9 +724,6 @@ export default function ProgramBuilder() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-barlow text-sm font-semibold text-white">{ex.exercise_name}</p>
-                            {unmatchedExercises.has(ex.exercise_name) && (
-                              <p className="font-barlow text-[10px] text-yellow-400/80 mt-0.5">⚠ Exercise not found in library. Please review.</p>
-                            )}
                           </div>
                           <button onClick={() => setSupersetPickerFor(i)} className="font-barlow text-xs text-[#C9A84C]/50 hover:text-[#C9A84C] transition-colors border border-[#C9A84C]/20 rounded-full px-2 py-0.5">+ Superset</button>
                           <button onClick={() => setDays(prev => prev.map((d, di) => di === activeDayIndex ? { ...d, exercises: d.exercises.filter((_, ei) => ei !== i) } : d))} className="font-barlow text-xs text-white/20 hover:text-[#E05555]">Remove</button>
@@ -1078,13 +799,9 @@ export default function ProgramBuilder() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm overflow-hidden">
             <div className="px-6 pt-6 pb-2">
-              <h2 className="font-bebas text-2xl text-white tracking-wide">
-                {form.assignToClientId ? 'Save & Assign' : 'Save to Library'}
-              </h2>
+              <h2 className="font-bebas text-2xl text-white tracking-wide">Save to Library</h2>
               <p className="font-barlow text-sm text-white/50 mt-1">
-                {form.assignToClientId
-                  ? `Program saves to your library. A copy will be assigned to ${clients.find(c => c.id === form.assignToClientId)?.full_name ?? 'client'}.`
-                  : 'Program saves to your library. Assign to clients anytime from the Programs page.'}
+                Program saves to your library. Assign to clients anytime from the Programs page.
               </p>
             </div>
             <div className="px-6 py-5 flex flex-col gap-3">
@@ -1098,7 +815,7 @@ export default function ProgramBuilder() {
                 onClick={() => handleFinish(true)}
                 className="w-full bg-[#2C2C2E] text-white font-bebas text-base tracking-widest py-3 rounded-xl hover:bg-[#3A3A3C] transition-colors"
               >
-                {form.assignToClientId ? 'Save, Assign & Exit' : 'Save & Exit'}
+                Save &amp; Exit
               </button>
               <button
                 onClick={() => setShowSaveModal(false)}

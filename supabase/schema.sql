@@ -270,7 +270,7 @@ create policy "Client reads assigned workouts"
 create table if not exists workout_exercises (
   id            uuid primary key default gen_random_uuid(),
   workout_id    uuid not null references workouts(id) on delete cascade,
-  exercise_id   uuid references exercises(id) on delete set null,
+  exercise_id   uuid not null references exercises(id) on delete restrict,
   position      int not null default 0,
   is_unilateral   boolean default false,
   per_side        boolean default false,
@@ -413,6 +413,28 @@ create policy "Client reads own sessions"
     )
   );
 
+-- Clients also need INSERT/UPDATE/DELETE on their own sessions so they can
+-- start/finish/cancel from the client app. Without this the "Discard session"
+-- button on Session.tsx silently fails (RLS drops the DELETE) and leaves
+-- orphaned in_progress sessions in the database.
+create policy "Client manages own sessions"
+  on sessions
+  for all
+  using (
+    exists (
+      select 1 from clients c
+      where c.id = sessions.client_id
+        and c.profile_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1 from clients c
+      where c.id = sessions.client_id
+        and c.profile_id = auth.uid()
+    )
+  );
+
 
 -- ---------------------------------------------------------------------------
 -- 12. SESSION EXERCISES
@@ -452,6 +474,32 @@ create policy "Trainer manages session exercises"
 create policy "Client reads own session exercises"
   on session_exercises for select
   using (
+    exists (
+      select 1 from sessions s
+      join clients c on c.id = s.client_id
+      where s.id = session_exercises.session_id
+        and c.profile_id = auth.uid()
+    )
+  );
+
+-- Clients also need INSERT/UPDATE/DELETE on session_exercises so they can:
+--   • seedFromWorkout()  → INSERT one row per workout exercise on first load
+--   • handleSwap()       → UPDATE the exercise_id when swapping mid-session
+--   • handleSkip()       → UPDATE skipped/skip_note flags
+--   • handleAddExercise()→ INSERT extra exercises the client decides to add
+--   • cancelSession()    → DELETE all session_exercises when discarding
+create policy "Client manages own session exercises"
+  on session_exercises
+  for all
+  using (
+    exists (
+      select 1 from sessions s
+      join clients c on c.id = s.client_id
+      where s.id = session_exercises.session_id
+        and c.profile_id = auth.uid()
+    )
+  )
+  with check (
     exists (
       select 1 from sessions s
       join clients c on c.id = s.client_id

@@ -33,6 +33,7 @@ interface SetPrescription {
 interface ExerciseDetail {
   position: number
   exercise_name: string
+  superset_group: string | null
   sets: SetPrescription[]
 }
 
@@ -164,24 +165,49 @@ export default function ClientProgram() {
 
     const { data } = await supabase
       .from('workout_exercises')
-      .select('position, exercises(name), workout_set_prescriptions(set_number, set_type, reps, rpe_target, cue)')
+      .select('id, exercise_id, position, superset_group, exercises(name), workout_set_prescriptions(set_number, set_type, reps, rpe_target, cue)')
       .eq('workout_id', workoutId)
       .order('position')
 
     if (data) {
-      const exercises: ExerciseDetail[] = data.map((we: any) => ({
-        position: we.position,
-        exercise_name: we.exercises?.name ?? 'Exercise',
-        sets: (we.workout_set_prescriptions ?? [])
-          .sort((a: any, b: any) => a.set_number - b.set_number)
-          .map((s: any) => ({
-            set_number: s.set_number,
-            set_type: s.set_type ?? 'working',
-            reps: s.reps,
-            rpe_target: s.rpe_target,
-            cue: s.cue,
-          })),
-      }))
+      // Skip rows with null exercise_id (orphaned by ON DELETE SET NULL on
+      // workout_exercises.exercise_id when the underlying exercise was
+      // deleted from the trainer's library).
+      const validRows = (data as any[]).filter(we => !!we.exercise_id)
+
+      // Fallback name resolver — if the embedded join failed (e.g. RLS edge
+      // case), look up the exercise by id directly so we never show
+      // "Exercise" as a placeholder.
+      const missingIds = validRows
+        .filter((we: any) => !we.exercises?.name && we.exercise_id)
+        .map((we: any) => we.exercise_id as string)
+      let nameById = new Map<string, string>()
+      if (missingIds.length > 0) {
+        const { data: exRows } = await supabase
+          .from('exercises')
+          .select('id, name')
+          .in('id', missingIds)
+        nameById = new Map((exRows ?? []).map((e: any) => [e.id, e.name]))
+      }
+
+      const exercises: ExerciseDetail[] = validRows.map((we: any) => {
+        const joinName = we.exercises?.name as string | undefined
+        const fallbackName = we.exercise_id ? nameById.get(we.exercise_id) : undefined
+        return {
+          position: we.position,
+          exercise_name: joinName || fallbackName || 'Exercise',
+          superset_group: we.superset_group ?? null,
+          sets: (we.workout_set_prescriptions ?? [])
+            .sort((a: any, b: any) => a.set_number - b.set_number)
+            .map((s: any) => ({
+              set_number: s.set_number,
+              set_type: s.set_type ?? 'working',
+              reps: s.reps,
+              rpe_target: s.rpe_target,
+              cue: s.cue,
+            })),
+        }
+      })
       setExerciseCache(prev => ({ ...prev, [workoutId]: exercises }))
     }
     setLoadingExercises(false)
@@ -415,7 +441,12 @@ export default function ClientProgram() {
                       <div className="w-7 h-7 rounded-full bg-[#C9A84C]/15 flex items-center justify-center flex-shrink-0">
                         <span className="font-bebas text-sm text-[#C9A84C]">{i + 1}</span>
                       </div>
-                      <span className="font-barlow text-sm font-semibold text-white">{ex.exercise_name}</span>
+                      <span className="font-barlow text-sm font-semibold text-white flex-1 min-w-0 truncate">{ex.exercise_name}</span>
+                      {ex.superset_group && (
+                        <span className="font-barlow text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#C9A84C]/15 text-[#C9A84C] flex-shrink-0">
+                          SS {ex.superset_group}
+                        </span>
+                      )}
                     </div>
 
                     {/* Sets */}

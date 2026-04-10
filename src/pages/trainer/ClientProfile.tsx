@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { parseTrainingDocument } from '../../utils/programParser'
+import { saveParsedProgramToLibrary } from '../../utils/saveParsedProgram'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -50,6 +51,9 @@ interface Session {
   started_at: string | null
   completed_at: string | null
   duration_min: number | null
+  total_tonnage: number | null
+  avg_rpe: number | null
+  status: string | null
   notes: string | null
   coach_notes: string | null
   rating: number | null
@@ -178,6 +182,7 @@ export default function ClientProfile() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [checkIns, setCheckIns] = useState<CheckIn[]>([])
   const [maxes, setMaxes] = useState<TrainingMax[]>([])
+  const [personalRecords, setPersonalRecords] = useState<{ exercise_name: string; pr_type: string; value: number; logged_at: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [stickyNote, setStickyNote] = useState('')
   const [savingNote, setSavingNote] = useState(false)
@@ -194,7 +199,7 @@ export default function ClientProfile() {
   const loadSessions = useCallback(async (cid: string) => {
     const { data } = await supabase
       .from('sessions')
-      .select('id, workout_id, started_at, completed_at, coach_notes, workouts(name, day_number)')
+      .select('id, workout_id, started_at, completed_at, duration_min, total_tonnage, avg_rpe, status, coach_notes, workouts(name, day_number)')
       .eq('client_id', cid)
       .order('started_at', { ascending: false })
       .limit(50)
@@ -215,7 +220,7 @@ export default function ClientProfile() {
     setLoading(true)
     const cid = clientId!
 
-    const [clientRes, assignRes, historyRes, sessRes, checkRes, maxRes] = await Promise.all([
+    const [clientRes, assignRes, historyRes, sessRes, checkRes, maxRes, prRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', cid).single(),
       supabase
         .from('client_cycle_assignments')
@@ -232,7 +237,7 @@ export default function ClientProfile() {
         .order('created_at', { ascending: false }),
       supabase
         .from('sessions')
-        .select('id, workout_id, started_at, completed_at, coach_notes, workouts(name, day_number)')
+        .select('id, workout_id, started_at, completed_at, duration_min, total_tonnage, avg_rpe, status, coach_notes, workouts(name, day_number)')
         .eq('client_id', cid)
         .order('started_at', { ascending: false })
         .limit(50),
@@ -246,6 +251,12 @@ export default function ClientProfile() {
         .select('*')
         .eq('client_id', cid)
         .order('exercise_name'),
+      supabase
+        .from('personal_records')
+        .select('exercise_name, pr_type, value, logged_at')
+        .eq('client_id', cid)
+        .order('logged_at', { ascending: false })
+        .limit(100),
     ])
 
     if (clientRes.data) {
@@ -268,6 +279,7 @@ export default function ClientProfile() {
     setSessions((sessRes.data ?? []) as unknown as Session[])
     setCheckIns(checkRes.data ?? [])
     setMaxes(maxRes.data ?? [])
+    setPersonalRecords((prRes.data ?? []) as any)
     setLoading(false)
   }, [clientId])
 
@@ -473,19 +485,13 @@ export default function ClientProfile() {
               </button>
             )}
             <button
-              onClick={() => setActiveTab('Messages')}
-              className="font-barlow text-sm text-white/60 border border-[#2C2C2E] rounded-lg px-3 py-2 hover:border-[#3A3A3C] hover:text-white transition-colors"
-            >
-              Message
-            </button>
-            <button
               onClick={openStartSessionModal}
               className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-4 py-2 rounded-lg hover:bg-[#E2C070] transition-colors"
             >
               Start Session
             </button>
             <button
-              onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
+              onClick={() => navigate(`/trainer/programs/new`)}
               className="font-barlow text-sm text-white/60 border border-[#2C2C2E] rounded-lg px-3 py-2 hover:border-[#3A3A3C] hover:text-white transition-colors"
             >
               Build Program
@@ -737,7 +743,7 @@ export default function ClientProfile() {
             />
           )}
           {activeTab === 'Progress' && (
-            <ProgressTab sessions={sessions} />
+            <ProgressTab sessions={sessions} personalRecords={personalRecords} onRefresh={loadAll} />
           )}
           {activeTab === 'Check-ins' && (
             <CheckInsTab checkIns={checkIns} clientId={clientId!} onRefresh={loadAll} />
@@ -751,7 +757,11 @@ export default function ClientProfile() {
             />
           )}
           {activeTab === 'Messages' && (
-            <StubTab title="Messages" desc="Direct messaging between you and this client. Coming soon." />
+            <MessagesTab
+              clientId={clientId!}
+              trainerId={profile?.id ?? ''}
+              clientName={client?.full_name ?? 'Client'}
+            />
           )}
           {activeTab === 'Vault' && (
             <VaultTab clientId={clientId!} trainerId={profile?.id ?? ''} />
@@ -1096,12 +1106,17 @@ function ProgramTab({
         }
       }
 
-      // 3. Deactivate existing assignment
-      await supabase
+      // 3. Deactivate existing assignment. Check for an error explicitly —
+      // silently ignoring this caused the "two active programs" bug where
+      // Andrea Test's home page kept showing her old Female Training
+      // Program even after Josh Test was assigned (see
+      // supabase/migrations/fix_stale_client_assignments.sql).
+      const { error: deactivateErr } = await supabase
         .from('client_cycle_assignments')
         .update({ is_active: false })
         .eq('client_id', clientId)
         .eq('is_active', true)
+      if (deactivateErr) throw new Error(`Could not deactivate previous program: ${deactivateErr.message}`)
 
       // 4. Create new assignment
       const { error: assignErr } = await supabase.from('client_cycle_assignments').insert({
@@ -1235,7 +1250,7 @@ function ProgramTab({
           <button
             onClick={() => {
               setShowAssignModal(false)
-              navigate(`/trainer/programs/new?clientId=${clientId}`)
+              navigate(`/trainer/programs/new`)
             }}
             className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-3 rounded-xl hover:bg-[#E2C070] transition-colors"
           >
@@ -1286,7 +1301,7 @@ function ProgramTab({
               Create a program specifically for this client from scratch.
             </p>
             <button
-              onClick={() => navigate(`/trainer/programs/new?clientId=${clientId}`)}
+              onClick={() => navigate(`/trainer/programs/new`)}
               className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-6 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
             >
               Build Program
@@ -1391,18 +1406,21 @@ function ProgramTab({
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-3 mt-5">
-          <button
-            onClick={openAssignModal}
-            className="flex-1 font-barlow text-sm text-white/50 border border-[#2C2C2E] rounded-lg py-2.5 hover:text-white hover:border-[#3A3A3C] transition-colors"
-          >
-            Assign Different Program
-          </button>
+        <div className="flex flex-col gap-2 mt-5">
           <button
             onClick={() => navigate(`/trainer/programs/${assignment.cycle_id}`)}
-            className="flex-1 bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
+            className="w-full bg-[#C9A84C] text-black font-bebas text-sm tracking-widest py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors"
           >
-            View Full Program
+            Edit Client Program
+          </button>
+          <p className="font-barlow text-xs text-white/30 text-center -mt-0.5">
+            Changes apply to this client only — library is unchanged
+          </p>
+          <button
+            onClick={openAssignModal}
+            className="w-full font-barlow text-sm text-white/50 border border-[#2C2C2E] rounded-lg py-2.5 hover:text-white hover:border-[#3A3A3C] transition-colors"
+          >
+            Assign Different Program
           </button>
         </div>
       </div>
@@ -1587,36 +1605,179 @@ function SessionsTab({
 // Progress Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProgressTab({ sessions }: { sessions: Session[] }) {
-  const completed = sessions.filter(s => s.completed_at).slice(0, 12).reverse()
+function ProgressTab({
+  sessions,
+  personalRecords,
+  onRefresh,
+}: {
+  sessions: Session[]
+  personalRecords: { exercise_name: string; pr_type: string; value: number; logged_at: string }[]
+  onRefresh: () => void
+}) {
+  const completed = sessions.filter(s => s.completed_at)
+  const recent12 = [...completed].slice(0, 12).reverse()
+
+  // ── Summary stats ──
+  const totalSessions = completed.length
+  const avgDuration = completed.filter(s => s.duration_min).length > 0
+    ? Math.round(completed.reduce((sum, s) => sum + (s.duration_min ?? 0), 0) / completed.filter(s => s.duration_min).length)
+    : null
+  const avgRpe = completed.filter(s => s.avg_rpe).length > 0
+    ? (completed.reduce((sum, s) => sum + (s.avg_rpe ?? 0), 0) / completed.filter(s => s.avg_rpe).length).toFixed(1)
+    : null
+  const totalVolume = completed.reduce((sum, s) => sum + (s.total_tonnage ?? 0), 0)
+
+  // ── Volume chart ──
+  const maxTonnage = Math.max(...recent12.map(s => s.total_tonnage ?? 0), 1)
+
+  // ── Personal Records — deduplicate to latest per exercise+type ──
+  const latestPRs = Object.values(
+    personalRecords.reduce((acc, pr) => {
+      const key = `${pr.exercise_name}__${pr.pr_type}`
+      if (!acc[key] || pr.logged_at > acc[key].logged_at) acc[key] = pr
+      return acc
+    }, {} as Record<string, typeof personalRecords[number]>)
+  ).sort((a, b) => b.logged_at.localeCompare(a.logged_at)).slice(0, 10)
+
+  // ── Sessions this week ──
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  weekStart.setHours(0, 0, 0, 0)
+  const sessionsThisWeek = completed.filter(s => s.completed_at && new Date(s.completed_at) >= weekStart).length
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Sessions over time - simple bar chart */}
+
+      {/* Stats strip */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: 'Total Sessions', value: totalSessions, unit: '' },
+          { label: 'This Week', value: sessionsThisWeek, unit: '' },
+          { label: 'Avg Duration', value: avgDuration ?? '—', unit: avgDuration ? 'min' : '' },
+          { label: 'Avg RPE', value: avgRpe ?? '—', unit: '' },
+        ].map(stat => (
+          <div key={stat.label} className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-4 text-center">
+            <p className="font-bebas text-2xl text-[#C9A84C] tracking-wide leading-none">
+              {stat.value}<span className="text-sm text-white/40 ml-0.5">{stat.unit}</span>
+            </p>
+            <p className="font-barlow text-[10px] text-white/40 uppercase tracking-wider mt-1">{stat.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Volume trend */}
       <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
-        <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-4">Session Activity (Last 12)</p>
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Volume Trend (Last 12 Sessions)</p>
+          {totalVolume > 0 && (
+            <p className="font-barlow text-xs text-white/30">{(totalVolume / 1000).toFixed(1)}k lbs total</p>
+          )}
+        </div>
+        {recent12.length === 0 ? (
+          <p className="font-barlow text-sm text-white/30 italic text-center py-4">No completed sessions yet</p>
+        ) : (
+          <div className="flex items-end gap-1.5 h-28">
+            {recent12.map(s => {
+              const hasVolume = (s.total_tonnage ?? 0) > 0
+              const heightPct = hasVolume ? Math.max(8, ((s.total_tonnage ?? 0) / maxTonnage) * 100) : 8
+              const dateLabel = s.started_at
+                ? new Date(s.started_at).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })
+                : ''
+              return (
+                <div key={s.id} className="flex-1 flex flex-col items-center gap-1 group relative">
+                  <div
+                    className="w-full rounded-sm transition-all"
+                    style={{
+                      height: `${heightPct}%`,
+                      backgroundColor: hasVolume ? '#C9A84C' : '#2C2C2E',
+                      opacity: hasVolume ? 0.8 : 0.4,
+                    }}
+                  />
+                  {hasVolume && (
+                    <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#1C1C1E] border border-white/10 rounded px-1.5 py-0.5 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+                      <p className="font-barlow text-[10px] text-white/70">{s.total_tonnage?.toLocaleString()} lbs</p>
+                      {s.duration_min && <p className="font-barlow text-[10px] text-white/40">{s.duration_min} min</p>}
+                    </div>
+                  )}
+                  <p className="font-barlow text-white/20" style={{ fontSize: 8 }}>{dateLabel}</p>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Recent sessions list */}
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="font-barlow text-xs text-white/40 uppercase tracking-wider">Recent Sessions</p>
+          <button onClick={onRefresh} className="font-barlow text-[10px] text-white/30 hover:text-white/60 transition-colors">↻ Refresh</button>
+        </div>
         {completed.length === 0 ? (
           <p className="font-barlow text-sm text-white/30 italic text-center py-4">No completed sessions yet</p>
         ) : (
-          <div className="flex items-end gap-1.5 h-24">
-            {completed.map(s => (
-              <div key={s.id} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full rounded-sm bg-[#C9A84C]/70"
-                  style={{ height: `${Math.max(8, (s.duration_min ?? 45) / 90 * 100)}%` }}
-                />
-                <p className="font-barlow text-xs text-white/20 rotate-45 origin-left" style={{ fontSize: 9 }}>
-                  {s.started_at ? new Date(s.started_at).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }) : ''}
-                </p>
+          <div className="flex flex-col divide-y divide-white/[0.05]">
+            {completed.slice(0, 8).map(s => (
+              <div key={s.id} className="py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-barlow text-sm text-white/80 truncate">
+                    {s.workouts?.name ?? 'Workout'}
+                  </p>
+                  <p className="font-barlow text-xs text-white/35 mt-0.5">
+                    {s.completed_at ? new Date(s.completed_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}
+                  </p>
+                </div>
+                <div className="flex gap-3 flex-shrink-0 text-right">
+                  {s.duration_min && (
+                    <div>
+                      <p className="font-barlow text-xs text-white/60">{s.duration_min}m</p>
+                      <p className="font-barlow text-[9px] text-white/25 uppercase">Duration</p>
+                    </div>
+                  )}
+                  {s.total_tonnage != null && s.total_tonnage > 0 && (
+                    <div>
+                      <p className="font-barlow text-xs text-white/60">{s.total_tonnage.toLocaleString()}</p>
+                      <p className="font-barlow text-[9px] text-white/25 uppercase">lbs</p>
+                    </div>
+                  )}
+                  {s.avg_rpe != null && (
+                    <div>
+                      <p className="font-barlow text-xs text-[#C9A84C]">{s.avg_rpe.toFixed(1)}</p>
+                      <p className="font-barlow text-[9px] text-white/25 uppercase">RPE</p>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5 text-center">
-        <p className="font-bebas text-lg text-white/20 tracking-wide">Progress Charts</p>
-        <p className="font-barlow text-sm text-white/30 mt-1">1RM trends, body weight, and volume charts coming soon.</p>
+      {/* Personal Records */}
+      <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-5">
+        <p className="font-barlow text-xs text-white/40 uppercase tracking-wider mb-3">Personal Records</p>
+        {latestPRs.length === 0 ? (
+          <p className="font-barlow text-sm text-white/30 italic text-center py-4">No PRs recorded yet</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-white/[0.05]">
+            {latestPRs.map(pr => (
+              <div key={`${pr.exercise_name}-${pr.pr_type}`} className="py-2.5 flex items-center justify-between">
+                <div>
+                  <p className="font-barlow text-sm text-white/80">{pr.exercise_name}</p>
+                  <p className="font-barlow text-[10px] text-white/30 mt-0.5 uppercase tracking-wide">{pr.pr_type === 'weight' ? 'Max Weight' : 'Max Reps'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bebas text-lg text-[#C9A84C] tracking-wide leading-none">
+                    {pr.value}{pr.pr_type === 'weight' ? ' lbs' : ' reps'}
+                  </p>
+                  <p className="font-barlow text-[9px] text-white/25 mt-0.5">
+                    {new Date(pr.logged_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -2288,15 +2449,22 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
                       <p className="font-barlow text-xs text-[#C9A84C]/70">This looks like a training program.</p>
                       <button
                         onClick={async () => {
+                          if (!trainerId) return
                           setParsingDocId(doc.id)
                           setParseError(null)
                           const result = await parseTrainingDocument(doc.file_url, doc.name)
-                          setParsingDocId(null)
-                          if (result.success) {
-                            navigate('/trainer/programs/new', { state: { parsedProgram: result.data, clientId } })
-                          } else {
+                          if (!result.success) {
+                            setParsingDocId(null)
                             setParseError(result.error)
+                            return
                           }
+                          const saved = await saveParsedProgramToLibrary(result.data, trainerId)
+                          setParsingDocId(null)
+                          if (!saved.success) {
+                            setParseError(saved.error)
+                            return
+                          }
+                          navigate(`/trainer/programs/${saved.cycleId}`)
                         }}
                         disabled={parsingDocId === doc.id}
                         className="font-barlow text-xs text-[#C9A84C] font-semibold hover:text-[#E2C070] transition-colors disabled:opacity-50"
@@ -2319,14 +2487,166 @@ function VaultTab({ clientId, trainerId }: { clientId: string; trainerId: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stub Tab
+// Messages Tab
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StubTab({ title, desc }: { title: string; desc: string }) {
+function MessagesTab({
+  clientId,
+  trainerId,
+  clientName,
+}: {
+  clientId: string
+  trainerId: string
+  clientName: string
+}) {
+  const [messages, setMessages] = useState<{ id: string; sender_role: string; body: string; is_broadcast: boolean; created_at: string; read_at: string | null }[]>([])
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load messages
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase
+        .from('messages')
+        .select('id, sender_role, body, is_broadcast, created_at, read_at')
+        .eq('client_id', clientId)
+        .eq('trainer_id', trainerId)
+        .order('created_at', { ascending: true })
+      setMessages(data ?? [])
+      // Mark client messages as read
+      await supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('client_id', clientId)
+        .eq('sender_role', 'client')
+        .is('read_at', null)
+    }
+    if (clientId && trainerId) load()
+  }, [clientId, trainerId])
+
+  // Scroll to bottom when messages load/change
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!clientId || !trainerId) return
+    const channel = supabase
+      .channel(`messages-tab:${clientId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `client_id=eq.${clientId}`,
+      }, payload => {
+        const msg = payload.new as any
+        setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg])
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [clientId, trainerId])
+
+  async function handleSend() {
+    const text = input.trim()
+    if (!text || sending) return
+    setSending(true)
+    setInput('')
+
+    const optimistic = { id: `temp-${Date.now()}`, sender_role: 'trainer', body: text, is_broadcast: false, created_at: new Date().toISOString(), read_at: null }
+    setMessages(prev => [...prev, optimistic])
+
+    await supabase.from('messages').insert({
+      trainer_id: trainerId,
+      client_id: clientId,
+      sender_role: 'trainer',
+      body: text,
+      is_broadcast: false,
+      created_at: new Date().toISOString(),
+    })
+    setSending(false)
+    inputRef.current?.focus()
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+  }
+
+  function formatTime(iso: string) {
+    const d = new Date(iso)
+    const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000)
+    if (diffDays === 0) return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    if (diffDays === 1) return 'Yesterday'
+    if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'short' })
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
   return (
-    <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] p-16 text-center">
-      <p className="font-bebas text-2xl text-white/20 tracking-wide mb-2">{title}</p>
-      <p className="font-barlow text-sm text-white/30">{desc}</p>
+    <div className="bg-[#1C1C1E] rounded-2xl border border-white/[0.06] flex flex-col" style={{ height: '60vh' }}>
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-[#2C2C2E] flex-shrink-0">
+        <p className="font-barlow text-sm text-white/60">Conversation with <span className="text-white font-semibold">{clientName}</span></p>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {messages.length === 0 && (
+          <div className="flex items-center justify-center h-full">
+            <p className="font-barlow text-white/30 text-sm">No messages yet. Start the conversation.</p>
+          </div>
+        )}
+        {messages.map(msg => {
+          const isTrainer = msg.sender_role === 'trainer'
+          if (msg.is_broadcast) {
+            return (
+              <div key={msg.id} className="w-full">
+                <div className="bg-[#0A0A0A] border-l-4 border-[#C9A84C] rounded-r-2xl rounded-bl-2xl px-4 py-3">
+                  <p className="font-barlow text-[10px] text-[#C9A84C] uppercase tracking-widest mb-1">📣 Broadcast</p>
+                  <p className="font-barlow text-white text-sm">{msg.body}</p>
+                  <p className="font-barlow text-white/30 text-[10px] mt-2">{formatTime(msg.created_at)}</p>
+                </div>
+              </div>
+            )
+          }
+          return (
+            <div key={msg.id} className={`flex ${isTrainer ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[78%] px-4 py-3 ${isTrainer ? 'bg-[#C9A84C] text-black rounded-t-2xl rounded-bl-2xl rounded-br-sm' : 'bg-[#2C2C2E] text-white rounded-t-2xl rounded-br-2xl rounded-bl-sm'}`}>
+                <p className="font-barlow text-sm leading-relaxed">{msg.body}</p>
+                <p className={`font-barlow text-[10px] mt-1 ${isTrainer ? 'text-black/50 text-right' : 'text-white/30'}`}>{formatTime(msg.created_at)}</p>
+              </div>
+            </div>
+          )
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="border-t border-[#2C2C2E] px-4 py-3 flex-shrink-0">
+        <div className="flex items-end gap-3">
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={`Message ${clientName}...`}
+            className="flex-1 bg-[#2C2C2E] border border-[#3A3A3C] rounded-2xl px-4 py-3 text-white font-barlow text-sm placeholder-white/25 focus:outline-none focus:border-[#C9A84C] resize-none"
+            style={{ maxHeight: '120px', overflowY: 'auto' }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            className="flex-shrink-0 w-10 h-10 rounded-full bg-[#C9A84C] flex items-center justify-center disabled:opacity-40"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
+

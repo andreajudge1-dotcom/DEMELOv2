@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { CheckInProvider, useCheckIn } from '../contexts/CheckInContext'
+import { useNavigationGuardContext } from '../contexts/NavigationGuardContext'
+import NavigationGuardModal from '../components/NavigationGuardModal'
 
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
@@ -68,6 +71,16 @@ function ClientLayoutInner() {
   const navigate = useNavigate()
   const { profile, signOut } = useAuth()
   const { hasCheckedInThisWeek } = useCheckIn()
+  const { isDirty, message } = useNavigationGuardContext()
+  const [pendingPath, setPendingPath] = useState<string | null>(null)
+
+  function guardedNavigate(path: string) {
+    if (isDirty) {
+      setPendingPath(path)
+    } else {
+      navigate(path)
+    }
+  }
 
   async function handleSignOut() {
     await signOut()
@@ -134,7 +147,7 @@ function ClientLayoutInner() {
               return (
                 <button
                   key={item.path}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => guardedNavigate(item.path)}
                   className="relative flex flex-col items-center gap-1 px-3 py-1.5 min-w-[52px] justify-center"
                 >
                   {/* Check-in status badge */}
@@ -167,6 +180,18 @@ function ClientLayoutInner() {
 
         </div>
       </nav>
+
+      {/* Navigation guard modal */}
+      {pendingPath && (
+        <NavigationGuardModal
+          title="Hold on!"
+          body={message || 'You have unsaved work. Are you sure you want to leave?'}
+          stayLabel="Stay"
+          leaveLabel="Leave anyway"
+          onStay={() => setPendingPath(null)}
+          onLeave={() => { navigate(pendingPath); setPendingPath(null) }}
+        />
+      )}
     </div>
   )
 }

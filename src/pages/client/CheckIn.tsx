@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useUnsavedWarning } from '../../hooks/useUnsavedWarning'
+import { useNavigationGuard } from '../../hooks/useNavigationGuard'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -137,6 +138,10 @@ export default function CheckIn() {
   const allFilled = !!(sleep && nutrition && fatigue && soreness && performance)
   const hasUnsavedWork = !!(sleep || nutrition || fatigue || soreness || performance || bodyWeight || notes)
   useUnsavedWarning(view === 'form' && hasUnsavedWork)
+  useNavigationGuard(
+    view === 'form' && hasUnsavedWork,
+    "You haven't submitted your check-in yet. If you leave now, everything you've filled in will be lost."
+  )
 
   useEffect(() => {
     if (profile?.id) loadAll(profile.id)
@@ -454,7 +459,7 @@ export default function CheckIn() {
                 <select
                   value={compareLeft}
                   onChange={e => setCompareLeft(e.target.value)}
-                  className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-xs text-white outline-none"
+                  className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-xs text-white outline-none appearance-none [color-scheme:dark]"
                 >
                   {checkInsWithPhotos.map(ci => (
                     <option key={ci.id} value={ci.id}>
@@ -468,7 +473,7 @@ export default function CheckIn() {
                 <select
                   value={compareRight}
                   onChange={e => setCompareRight(e.target.value)}
-                  className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-xs text-white outline-none"
+                  className="w-full bg-[#1C1C1E] border border-[#2C2C2E] rounded-lg px-3 py-2 font-barlow text-xs text-white outline-none appearance-none [color-scheme:dark]"
                 >
                   {checkInsWithPhotos.map(ci => (
                     <option key={ci.id} value={ci.id}>

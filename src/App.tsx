@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
+import { NavigationGuardProvider } from './contexts/NavigationGuardContext'
 import TrainerLayout from './layouts/TrainerLayout'
 import ClientLayout from './layouts/ClientLayout'
 import Login from './pages/auth/Login'
@@ -79,7 +80,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppRoutes />
+      <NavigationGuardProvider>
+        <AppRoutes />
+      </NavigationGuardProvider>
     </BrowserRouter>
   )
 }
