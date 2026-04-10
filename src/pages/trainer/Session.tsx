@@ -1028,6 +1028,6 @@ export default function TrainerSession() {
               + Add Set
             </button>
           </div>
-        )}
+  )
   }
 }
