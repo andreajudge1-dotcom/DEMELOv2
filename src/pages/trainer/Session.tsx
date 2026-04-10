@@ -410,33 +410,6 @@ export default function TrainerSession() {
     ))
   }
 
-  // ── Superset management ──
-  const [supersetPickerFor, setSupersetPickerFor] = useState<number | null>(null)
-
-  function nextSupersetLabel(): string {
-    const used = new Set(exercises.map(e => e.superset_group).filter(Boolean))
-    return ['A','B','C','D','E','F'].find(l => !used.has(l)) ?? 'A'
-  }
-
-  async function assignSuperset(exIdx: number, targetIdx: number) {
-    const target = exercises[targetIdx]
-    const label = target.superset_group ?? nextSupersetLabel()
-    const ids = [exercises[exIdx].session_exercise_id, exercises[targetIdx].session_exercise_id]
-    await Promise.all(ids.map(id => supabase.from('session_exercises').update({ superset_group: label }).eq('id', id)))
-    setExercises(prev => prev.map((ex, ei) => {
-      if (ei === exIdx) return { ...ex, superset_group: label }
-      if (ei === targetIdx && !ex.superset_group) return { ...ex, superset_group: label }
-      return ex
-    }))
-    setSupersetPickerFor(null)
-  }
-
-  async function removeSuperset(exIdx: number) {
-    const id = exercises[exIdx].session_exercise_id
-    await supabase.from('session_exercises').update({ superset_group: null }).eq('id', id)
-    setExercises(prev => prev.map((ex, ei) => ei === exIdx ? { ...ex, superset_group: null } : ex))
-  }
-
   async function logSet(exIdx: number, setIdx: number) {
     const ex = exercises[exIdx]
     const set = ex.sets[setIdx]
@@ -814,31 +787,7 @@ export default function TrainerSession() {
 
       {/* ── Exercises ── */}
       <div className="flex flex-col gap-4">
-        {(() => {
-          const seen = new Set<string>()
-          return exercises.flatMap((ex, exIdx) => {
-            const group = ex.superset_group
-            if (group && seen.has(group)) return []
-            if (group) {
-              seen.add(group)
-              const groupIndices = exercises.reduce<number[]>((acc, e, i) => { if (e.superset_group === group) acc.push(i); return acc }, [])
-              return [(
-                <div key={`ss-${group}`} className="relative">
-                  <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C9A84C]/50 rounded-full" />
-                  <div className="pl-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="font-bebas text-xs text-[#C9A84C] bg-[#C9A84C]/10 border border-[#C9A84C]/20 px-2 py-0.5 rounded-full tracking-widest">SUPERSET {group}</span>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      {groupIndices.map(idx => renderExCard(exercises[idx], idx))}
-                    </div>
-                  </div>
-                </div>
-              )]
-            }
-            return [renderExCard(ex, exIdx)]
-          })
-        })()}
+        {exercises.map((ex, exIdx) => renderExCard(ex, exIdx))}
 
         {/* Add Exercise */}
         <button
@@ -848,32 +797,6 @@ export default function TrainerSession() {
           + Add Exercise
         </button>
       </div>
-
-      {/* ── Superset picker ── */}
-      {supersetPickerFor !== null && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1C1C1E] rounded-2xl border border-[#2C2C2E] w-full max-w-sm overflow-hidden">
-            <div className="p-4 border-b border-[#2C2C2E]">
-              <h2 className="font-bebas text-lg text-white tracking-wide">Pair with exercise</h2>
-              <p className="font-barlow text-xs text-white/40 mt-0.5">Select an exercise to group into a superset</p>
-            </div>
-            <div className="divide-y divide-[#2C2C2E] max-h-64 overflow-y-auto">
-              {exercises.map((ex, idx) => {
-                if (idx === supersetPickerFor) return null
-                return (
-                  <button key={idx} onClick={() => assignSuperset(supersetPickerFor, idx)} className="w-full text-left px-4 py-3 hover:bg-[#242424] transition-colors group">
-                    <p className="font-barlow text-sm font-semibold text-white group-hover:text-[#C9A84C] transition-colors">{ex.exercise_name}</p>
-                    {ex.superset_group && <p className="font-barlow text-xs text-[#C9A84C]/60 mt-0.5">Already in Superset {ex.superset_group} — will join this group</p>}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="p-4 border-t border-[#2C2C2E]">
-              <button onClick={() => setSupersetPickerFor(null)} className="w-full font-barlow text-sm text-white/40 hover:text-white py-1 transition-colors">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Swap modal ── */}
       {swapForIndex !== null && (
@@ -902,11 +825,6 @@ export default function TrainerSession() {
                 <span className="font-barlow text-sm font-semibold text-white truncate">{ex.exercise_name}</span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {ex.superset_group ? (
-                  <button onClick={() => removeSuperset(exIdx)} className="font-barlow text-[10px] text-white/20 hover:text-orange-400 transition-colors">Remove SS</button>
-                ) : (
-                  <button onClick={() => setSupersetPickerFor(exIdx)} className="font-barlow text-[10px] text-[#C9A84C]/50 hover:text-[#C9A84C] transition-colors border border-[#C9A84C]/20 rounded-full px-1.5 py-0.5">+ SS</button>
-                )}
                 <button
                   onClick={() => setSwapForIndex(exIdx)}
                   className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors"
