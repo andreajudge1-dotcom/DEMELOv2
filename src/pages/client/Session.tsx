@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import ExercisePicker from '../../components/ExercisePicker'
 import SessionSummary from '../../components/SessionSummary'
+import DarkSelect from '../../components/DarkSelect'
 import { useUnsavedWarning } from '../../hooks/useUnsavedWarning'
+import { useNavigationGuard } from '../../hooks/useNavigationGuard'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -39,6 +41,7 @@ interface ExerciseCard {
   exercise_name: string
   primary_muscle: string
   order_index: number
+  superset_group: string | null
   skipped: boolean
   skip_note: string
   sets: SetRow[]
@@ -125,6 +128,10 @@ export default function ClientSession() {
   const startedAtRef = useRef<string>('')
 
   useUnsavedWarning(!completed && exercises.length > 0)
+  useNavigationGuard(
+    !completed && exercises.length > 0,
+    'You have an active session in progress. Your logged sets are saved, but any unlogged sets will be lost if you leave now.'
+  )
 
   const loadSession = useCallback(async () => {
     if (!sessionId) return
@@ -154,7 +161,7 @@ export default function ClientSession() {
       // Load exercise data for summary display
       const { data: existing } = await supabase
         .from('session_exercises')
-        .select('id, exercise_id, order_index, skipped, skip_note, exercises(name, primary_muscle)')
+        .select('id, exercise_id, order_index, superset_group, skipped, skip_note, exercises(name, primary_muscle)')
         .eq('session_id', sessionId)
         .order('order_index')
       if (existing && existing.length > 0) {
@@ -168,7 +175,7 @@ export default function ClientSession() {
     // Load or seed exercises for active session
     const { data: existing } = await supabase
       .from('session_exercises')
-      .select('id, exercise_id, order_index, skipped, skip_note, exercises(name, primary_muscle)')
+      .select('id, exercise_id, order_index, superset_group, skipped, skip_note, exercises(name, primary_muscle)')
       .eq('session_id', sessionId)
       .order('order_index')
 
@@ -184,7 +191,7 @@ export default function ClientSession() {
   async function seedFromWorkout(workoutId: string, sessId: string) {
     const { data: wExercises } = await supabase
       .from('workout_exercises')
-      .select('id, exercise_id, position, exercises(name, primary_muscle), workout_set_prescriptions(id, set_number, set_type, reps, rpe_target)')
+      .select('id, exercise_id, position, superset_group, exercises(name, primary_muscle), workout_set_prescriptions(id, set_number, set_type, reps, rpe_target)')
       .eq('workout_id', workoutId)
       .order('position')
 
@@ -237,27 +244,81 @@ export default function ClientSession() {
     for (const we of validExercises) {
       const { data: se } = await supabase
         .from('session_exercises')
-        .insert({ session_id: sessId, exercise_id: we.exercise_id, workout_exercise_id: we.id, order_index: we.position })
+        .insert({ session_id: sessId, exercise_id: we.exercise_id, workout_exercise_id: we.id, order_index: we.position, superset_group: (we as any).superset_group ?? null })
         .select('id')
         .single()
       if (!se) continue
 
       const prescriptions = [...((we as any).workout_set_prescriptions ?? [])].sort((a: any, b: any) => a.set_number - b.set_number)
       const sets: SetRow[] = []
+      let setCounter = 1
       for (const p of prescriptions) {
-        const { data: ss } = await supabase
-          .from('session_sets')
-          .insert({ session_exercise_id: se.id, prescribed_set_id: p.id, set_number: p.set_number })
-          .select('id')
-          .single()
-        sets.push({
-          session_set_id: ss?.id ?? '',
-          set_number: p.set_number,
-          set_type: p.set_type ?? 'working',
-          prescribed_reps: p.reps ?? '',
-          rpe_target: p.rpe_target,
-          weight: '', reps_done: '', rpe_felt: null, logged: false,
-        })
+        const pType = p.set_type ?? 'working'
+        if (pType === 'drop') {
+          // A "drop" prescription means working set + drop set combo.
+          // Expand into two rows so the session mirrors the program view.
+          const { data: wss } = await supabase
+            .from('session_sets')
+            .insert({
+              session_exercise_id: se.id,
+              prescribed_set_id: p.id,
+              set_number: setCounter,
+              set_type: 'working',
+              prescribed_reps: p.reps ?? '',
+            })
+            .select('id')
+            .single()
+          sets.push({
+            session_set_id: wss?.id ?? '',
+            set_number: setCounter,
+            set_type: 'working',
+            prescribed_reps: p.reps ?? '',
+            rpe_target: p.rpe_target,
+            weight: '', reps_done: '', rpe_felt: null, logged: false,
+          })
+          setCounter++
+          const { data: dss } = await supabase
+            .from('session_sets')
+            .insert({
+              session_exercise_id: se.id,
+              prescribed_set_id: p.id,
+              set_number: setCounter,
+              set_type: 'drop',
+              prescribed_reps: p.reps ?? '',
+            })
+            .select('id')
+            .single()
+          sets.push({
+            session_set_id: dss?.id ?? '',
+            set_number: setCounter,
+            set_type: 'drop',
+            prescribed_reps: p.reps ?? '',
+            rpe_target: p.rpe_target,
+            weight: '', reps_done: '', rpe_felt: null, logged: false,
+          })
+          setCounter++
+        } else {
+          const { data: ss } = await supabase
+            .from('session_sets')
+            .insert({
+              session_exercise_id: se.id,
+              prescribed_set_id: p.id,
+              set_number: setCounter,
+              set_type: pType,
+              prescribed_reps: p.reps ?? '',
+            })
+            .select('id')
+            .single()
+          sets.push({
+            session_set_id: ss?.id ?? '',
+            set_number: setCounter,
+            set_type: pType,
+            prescribed_reps: p.reps ?? '',
+            rpe_target: p.rpe_target,
+            weight: '', reps_done: '', rpe_felt: null, logged: false,
+          })
+          setCounter++
+        }
       }
 
       const joinName = (we as any).exercises?.name as string | undefined
@@ -269,6 +330,7 @@ export default function ClientSession() {
         exercise_name: joinName || fallback?.name || 'Exercise',
         primary_muscle: joinMuscle || fallback?.primary_muscle || '',
         order_index: we.position,
+        superset_group: (we as any).superset_group ?? null,
         skipped: false, skip_note: '',
         sets,
       })
@@ -295,15 +357,15 @@ export default function ClientSession() {
     for (const se of sesExercises) {
       const { data: setsData } = await supabase
         .from('session_sets')
-        .select('id, set_number, reps_completed, weight_kg, rpe_actual, workout_set_prescriptions(set_type, reps, rpe_target)')
+        .select('id, set_number, set_type, prescribed_reps, reps_completed, weight_kg, rpe_actual, workout_set_prescriptions(rpe_target)')
         .eq('session_exercise_id', se.id)
         .order('set_number')
 
       const sets: SetRow[] = (setsData ?? []).map((s: any) => ({
         session_set_id: s.id,
         set_number: s.set_number,
-        set_type: s.workout_set_prescriptions?.set_type ?? 'working',
-        prescribed_reps: s.workout_set_prescriptions?.reps ?? '',
+        set_type: s.set_type ?? 'working',
+        prescribed_reps: s.prescribed_reps ?? '',
         rpe_target: s.workout_set_prescriptions?.rpe_target ?? null,
         weight: s.weight_kg != null ? String(s.weight_kg) : '',
         reps_done: s.reps_completed != null ? String(s.reps_completed) : '',
@@ -320,6 +382,7 @@ export default function ClientSession() {
         exercise_name: joinName || fallback?.name || 'Exercise',
         primary_muscle: joinMuscle || fallback?.primary_muscle || '',
         order_index: se.order_index,
+        superset_group: se.superset_group ?? null,
         skipped: se.skipped ?? false,
         skip_note: se.skip_note ?? '',
         sets,
@@ -356,19 +419,103 @@ export default function ClientSession() {
     ))
   }
 
-  // Auto-log variant used by the RPE selector — RPE state hasn't been applied yet
-  // when onChange fires so we pass the new value directly instead of reading state.
-  async function autoLogOnRpe(exIdx: number, setIdx: number, rpeValue: number) {
+  async function changeSetType(exIdx: number, setIdx: number, newType: string) {
     const set = exercises[exIdx].sets[setIdx]
-    const w = parseFloat(set.weight)
-    const r = parseInt(set.reps_done)
+    await supabase.from('session_sets').update({ set_type: newType }).eq('id', set.session_set_id)
+    setExercises(prev => prev.map((ex, ei) =>
+      ei !== exIdx ? ex : { ...ex, sets: ex.sets.map((s, si) => si !== setIdx ? s : { ...s, set_type: newType }) }
+    ))
+  }
+
+  // Auto-log a set. Pass overrides for any field whose state hasn't applied yet
+  // (onChange fires before setState resolves, so read new values from overrides).
+  async function autoLog(
+    exIdx: number,
+    setIdx: number,
+    overrides: { weight?: string; reps_done?: string; rpe_felt?: number | null }
+  ) {
+    const set = exercises[exIdx].sets[setIdx]
+    const weightStr = overrides.weight ?? set.weight
+    const repsStr   = overrides.reps_done ?? set.reps_done
+    const rpe       = 'rpe_felt' in overrides ? overrides.rpe_felt : set.rpe_felt
+
+    const w = parseFloat(weightStr)
+    const r = parseInt(repsStr)
     if (isNaN(w) || isNaN(r)) return
 
-    await supabase.from('session_sets').update({ weight_kg: w, reps_completed: r, rpe_actual: rpeValue }).eq('id', set.session_set_id)
+    await supabase
+      .from('session_sets')
+      .update({ weight_kg: w, reps_completed: r, rpe_actual: rpe ?? null })
+      .eq('id', set.session_set_id)
+
     setExercises(prev => prev.map((ex, ei) =>
-      ei !== exIdx ? ex : { ...ex, sets: ex.sets.map((s, si) => si !== setIdx ? s : { ...s, rpe_felt: rpeValue, logged: true }) }
+      ei !== exIdx ? ex : {
+        ...ex,
+        sets: ex.sets.map((s, si) =>
+          si !== setIdx ? s : { ...s, ...overrides, logged: true }
+        ),
+      }
     ))
     setRestTimer(90)
+  }
+
+  // Add an extra set to an exercise during the session
+  async function addSet(exIdx: number) {
+    const ex = exercises[exIdx]
+    const lastSet = ex.sets[ex.sets.length - 1]
+    const newSetNumber = (lastSet?.set_number ?? 0) + 1
+
+    const { data: ss, error: insertErr } = await supabase
+      .from('session_sets')
+      .insert({ session_exercise_id: ex.session_exercise_id, set_number: newSetNumber })
+      .select('id')
+      .single()
+    if (insertErr) { alert(`Add set failed: ${insertErr.message} (code: ${insertErr.code})`); return }
+    if (!ss) { alert('Add set failed: no row returned'); return }
+
+    const newSet: SetRow = {
+      session_set_id: ss.id,
+      set_number: newSetNumber,
+      set_type: 'working',
+      prescribed_reps: lastSet?.prescribed_reps ?? '',
+      rpe_target: lastSet?.rpe_target ?? null,
+      weight: lastSet?.weight ?? '',
+      reps_done: '',
+      rpe_felt: null,
+      logged: false,
+    }
+
+    setExercises(prev => prev.map((e, ei) =>
+      ei !== exIdx ? e : { ...e, sets: [...e.sets, newSet] }
+    ))
+  }
+
+  // Log all sets for an exercise at once — no rest timer
+  async function logAllSets(exIdx: number) {
+    const ex = exercises[exIdx]
+    const toLog = ex.sets.filter(s => !s.logged && s.weight !== '' && s.reps_done !== '' && !isNaN(parseFloat(s.weight)) && !isNaN(parseInt(s.reps_done)))
+    if (toLog.length === 0) return
+
+    await Promise.all(
+      toLog.map(s =>
+        supabase.from('session_sets').update({
+          weight_kg: parseFloat(s.weight),
+          reps_completed: parseInt(s.reps_done),
+          rpe_actual: s.rpe_felt ?? null,
+        }).eq('id', s.session_set_id)
+      )
+    )
+
+    setExercises(prev => prev.map((e, ei) =>
+      ei !== exIdx ? e : {
+        ...e,
+        sets: e.sets.map(s =>
+          !s.logged && s.weight !== '' && s.reps_done !== '' && !isNaN(parseFloat(s.weight)) && !isNaN(parseInt(s.reps_done))
+            ? { ...s, logged: true }
+            : s
+        ),
+      }
+    ))
   }
 
   // ── Swap ──
@@ -567,42 +714,42 @@ export default function ClientSession() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] pb-24">
-      <div className="max-w-[500px] mx-auto px-4 pt-6">
+    <div className="min-h-screen bg-[#0A0A0A] pb-20">
+      <div className="w-full px-2 pt-2">
 
         {/* ── Header ── */}
-        <div className="bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.06] p-4 mb-4 flex items-center justify-between">
-          <div className="min-w-0">
-            <p className="font-bebas text-2xl text-white tracking-wide truncate">{dayName || 'Training'}</p>
+        <div className="bg-white/[0.03] backdrop-blur-sm rounded-xl border border-white/[0.06] px-3 py-2 mb-2 flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="font-bebas text-lg text-white tracking-wide truncate leading-none">{dayName || 'Training'}</p>
             {session?.session_context === 'unscheduled' && (
-              <p className="font-barlow text-xs text-white/30">Unscheduled workout</p>
+              <p className="font-barlow text-[9px] text-white/30">Unscheduled</p>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="font-bebas text-2xl text-[#C9A84C] tracking-widest tabular-nums">{formatTimer(elapsed)}</span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="font-bebas text-lg text-[#C9A84C] tracking-widest tabular-nums">{formatTimer(elapsed)}</span>
             <button
               onClick={() => setShowCancelConfirm(true)}
               disabled={finishing || cancelling}
-              className="font-barlow text-xs text-white/40 border border-white/10 rounded-lg px-2.5 py-2 hover:text-white hover:border-white/30 transition-colors disabled:opacity-40"
+              className="font-barlow text-[10px] text-white/40 border border-white/10 rounded-md px-2 py-1 hover:text-white hover:border-white/30 transition-colors disabled:opacity-40"
             >
               Cancel
             </button>
             <button
               onClick={finishSession}
               disabled={finishing || cancelling}
-              className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-4 py-2.5 rounded-lg hover:bg-[#E2C070] transition-colors disabled:opacity-50"
+              className="bg-[#C9A84C] text-black font-bebas text-sm tracking-widest px-3 py-1 rounded-md hover:bg-[#E2C070] transition-colors disabled:opacity-50"
             >
-              {finishing ? 'Finishing...' : 'Finish'}
+              {finishing ? 'Saving...' : 'Finish'}
             </button>
           </div>
         </div>
 
         {/* ── Rest timer ── */}
         {restTimer !== null && (
-          <div className="bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-xl px-4 py-3 mb-4 flex items-center justify-between">
-            <p className="font-barlow text-sm text-[#C9A84C]">Rest</p>
+          <div className="bg-[#C9A84C]/10 border border-[#C9A84C]/20 rounded-lg px-3 py-1.5 mb-2 flex items-center justify-between">
+            <p className="font-barlow text-xs text-[#C9A84C]">Rest</p>
             <div className="flex items-center gap-3">
-              <span className="font-bebas text-xl text-[#C9A84C] tabular-nums">{formatTimer(restTimer)}</span>
+              <span className="font-bebas text-lg text-[#C9A84C] tabular-nums">{formatTimer(restTimer)}</span>
               <button onClick={() => setRestTimer(null)} className="font-barlow text-xs text-white/30 hover:text-white">Skip</button>
             </div>
           </div>
@@ -617,85 +764,34 @@ export default function ClientSession() {
             </p>
           </div>
         )}
-        <div className="flex flex-col gap-4">
-          {exercises.map((ex, exIdx) => (
-            <div
-              key={ex.session_exercise_id}
-              className={`bg-white/[0.03] backdrop-blur-sm rounded-xl border p-4 ${
-                ex.skipped ? 'border-[#2C2C2E] opacity-50' : 'border-[#2C2C2E]'
-              }`}
-            >
-              {/* Exercise header */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-bebas text-sm text-[#C9A84C] w-6 text-center flex-shrink-0">{exIdx + 1}</span>
-                  <span className="font-barlow text-sm font-semibold text-white truncate">
-                    {ex.exercise_name}
-                    {ex.skipped && <span className="text-white/30 ml-2">(Skipped)</span>}
-                  </span>
-                </div>
-                {!ex.skipped && (
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={() => openSwap(exIdx)} className="font-barlow text-xs text-[#C9A84C] hover:text-[#E2C070] transition-colors">Swap</button>
-                    <button
-                      onClick={() => { setSkipForIndex(exIdx); setSkipNote('') }}
-                      className="font-barlow text-xs text-white/30 hover:text-white/60 transition-colors"
-                    >
-                      Skip
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Sets (hidden if skipped) */}
-              {!ex.skipped && (
-                <>
-                  <div className="grid grid-cols-[32px_50px_50px_40px_56px_56px_56px] gap-1 px-1 mb-1">
-                    <span className="font-barlow text-[9px] text-white/25 uppercase">Set</span>
-                    <span className="font-barlow text-[9px] text-white/25 uppercase">Type</span>
-                    <span className="font-barlow text-[9px] text-white/25 uppercase">Reps</span>
-                    <span className="font-barlow text-[9px] text-white/25 uppercase">RPE</span>
-                    <span className="font-barlow text-[9px] text-white/25 uppercase">Wt</span>
-                    <span className="font-barlow text-[9px] text-white/25 uppercase">Reps</span>
-                    <span className="font-barlow text-[9px] text-white/25 uppercase">RPE</span>
-                  </div>
-                  {ex.sets.map((set, setIdx) => {
-                    const td = SET_TYPE_COLORS[set.set_type] ?? SET_TYPE_COLORS.working
-                    return (
-                      <div key={set.session_set_id} className={`grid grid-cols-[32px_50px_50px_40px_56px_56px_56px] gap-1 items-center mb-1 rounded-lg px-1 py-1 transition-colors ${set.logged ? 'bg-green-500/5 border border-green-500/20' : ''}`}>
-                        <span className="font-barlow text-xs text-white/30 text-center">{set.set_number}</span>
-                        <span className="font-barlow text-[9px] font-semibold px-1 py-0.5 rounded-full text-center capitalize" style={{ backgroundColor: td.bg, color: td.text }}>{set.set_type}</span>
-                        <span className="font-barlow text-xs text-white/50 text-center">{set.prescribed_reps || '—'}</span>
-                        <span className="font-barlow text-xs text-white/30 text-center">{set.rpe_target ?? '—'}</span>
-                        <input type="number" value={set.weight} onChange={e => updateSet(exIdx, setIdx, 'weight', e.target.value)} disabled={set.logged} placeholder="lbs" className="bg-[#0A0A0A] border border-[#2C2C2E] rounded px-1 py-1 text-white font-barlow text-xs text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40" />
-                        <input type="number" value={set.reps_done} onChange={e => updateSet(exIdx, setIdx, 'reps_done', e.target.value)} disabled={set.logged} placeholder="reps" className="bg-[#0A0A0A] border border-[#2C2C2E] rounded px-1 py-1 text-white font-barlow text-xs text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40" />
-                        <select
-                          value={set.rpe_felt ?? ''}
-                          disabled={set.logged}
-                          onChange={e => {
-                            const rpeVal = e.target.value ? parseFloat(e.target.value) : null
-                            if (rpeVal !== null && set.weight !== '' && set.reps_done !== '') {
-                              // All fields filled — auto-save immediately
-                              autoLogOnRpe(exIdx, setIdx, rpeVal)
-                            } else {
-                              updateSet(exIdx, setIdx, 'rpe_felt', rpeVal)
-                            }
-                          }}
-                          className="bg-[#0A0A0A] border border-[#2C2C2E] rounded px-0.5 py-1 text-white font-barlow text-xs text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40 appearance-none"
-                        >
-                          <option value="">—</option>
-                          {RPE_VALUES.map(v => <option key={v} value={v}>{v}</option>)}
-                        </select>
+        <div className="flex flex-col gap-2">
+          {(() => {
+            const seen = new Set<string>()
+            return exercises.flatMap((ex, exIdx) => {
+              const group = ex.superset_group
+              if (group && seen.has(group)) return []
+              if (group) {
+                seen.add(group)
+                const groupIndices = exercises.reduce<number[]>((acc, e, i) => { if (e.superset_group === group) acc.push(i); return acc }, [])
+                return [(
+                  <div key={`ss-${group}`} className="relative">
+                    <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#C9A84C]/40 rounded-full" />
+                    <div className="pl-2.5">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="font-bebas text-[10px] text-[#C9A84C] bg-[#C9A84C]/10 border border-[#C9A84C]/20 px-1.5 py-0.5 rounded-full tracking-widest">SUPERSET {group}</span>
                       </div>
-                    )
-                  })}
-                </>
-              )}
-            </div>
-          ))}
+                      <div className="flex flex-col gap-1.5">
+                        {groupIndices.map(idx => renderClientCard(exercises[idx], idx))}
+                      </div>
+                    </div>
+                  </div>
+                )]
+              }
+              return [renderClientCard(ex, exIdx)]
+            })
+          })()}
         </div>
       </div>
-
       {/* ── Swap bottom sheet ── */}
       {swapForIndex !== null && !showFullLibrary && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center">
@@ -785,4 +881,141 @@ export default function ClientSession() {
       )}
     </div>
   )
+
+  function renderClientCard(ex: ExerciseCard, exIdx: number) {
+    return (
+      <div key={ex.session_exercise_id} className={`bg-white/[0.03] backdrop-blur-sm rounded-xl border px-2.5 py-2 ${ex.skipped ? 'border-[#2C2C2E] opacity-50' : 'border-[#2C2C2E]'}`}>
+        {/* Exercise header */}
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="min-w-0 flex-1">
+            <p className="font-bebas text-base text-white tracking-wide truncate leading-tight">{ex.exercise_name}</p>
+            {ex.primary_muscle && (
+              <span className="font-barlow text-[9px] text-white/30 uppercase tracking-wider">{ex.primary_muscle}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 ml-1 flex-shrink-0">
+            {!ex.skipped && (
+              <button
+                onClick={() => openSwap(exIdx)}
+                className="font-barlow text-[9px] text-white/30 border border-white/10 rounded px-1.5 py-0.5 hover:text-white/70 transition-colors"
+              >
+                Swap
+              </button>
+            )}
+            {!ex.skipped && (
+              <button
+                onClick={() => setSkipForIndex(exIdx)}
+                className="font-barlow text-[9px] text-white/30 border border-white/10 rounded px-1.5 py-0.5 hover:text-red-400 transition-colors"
+              >
+                Skip
+              </button>
+            )}
+          </div>
+        </div>
+
+        {ex.skipped ? (
+          <p className="font-barlow text-[10px] text-white/30 italic">{ex.skip_note || 'Skipped'}</p>
+        ) : (
+          <>
+            {/* Column headers */}
+            <div className="grid grid-cols-[14px_34px_48px_1fr_1fr_1fr] gap-0.5 mb-1 px-0.5">
+              <span />
+              <span className="font-barlow text-[8px] text-white/25 text-center uppercase">Type</span>
+              <span className="font-barlow text-[8px] text-white/25 text-center uppercase">Target</span>
+              <span className="font-barlow text-[8px] text-white/25 text-center uppercase">Lbs</span>
+              <span className="font-barlow text-[8px] text-white/25 text-center uppercase">Reps</span>
+              <span className="font-barlow text-[8px] text-white/25 text-center uppercase">RPE</span>
+            </div>
+
+            {ex.sets.map((set, setIdx) => {
+              const td = SET_TYPE_COLORS[set.set_type] ?? SET_TYPE_COLORS.working
+              const isDrop = set.set_type === 'drop'
+              return (
+                <div key={set.session_set_id}>
+                  {/* Drop connector */}
+                  {isDrop && (
+                    <div className="flex items-center gap-1 pl-5 mb-0.5">
+                      <div className="w-px h-2.5 bg-orange-400/30" />
+                      <span className="font-barlow text-[8px] text-orange-400/50 uppercase tracking-wider">drop</span>
+                    </div>
+                  )}
+                  <div className={`grid grid-cols-[14px_34px_48px_1fr_1fr_1fr] gap-0.5 items-center mb-0.5 rounded transition-colors
+                    ${isDrop ? 'pl-3 pr-0.5 py-0.5 border-l-2 border-orange-400/40' : 'px-0.5 py-0.5'}
+                    ${set.logged ? 'bg-green-500/5 border border-green-500/20' : ''}`}>
+                    <span className="font-barlow text-[9px] text-white/30 text-center">
+                      {isDrop ? '↓' : set.set_number}
+                    </span>
+                    <DarkSelect
+                      value={set.set_type}
+                      onChange={v => changeSetType(exIdx, setIdx, v)}
+                      options={Object.keys(SET_TYPE_COLORS).map(t => ({ value: t, label: t }))}
+                      className="font-barlow text-[7px] font-semibold rounded capitalize leading-tight py-0.5 px-0.5"
+                      style={{ backgroundColor: td.bg, color: td.text }}
+                    />
+                    <span className="font-barlow text-[9px] text-white/40 text-center leading-tight">
+                      {set.prescribed_reps || '—'}
+                      {set.rpe_target ? <span className="text-white/20">@{set.rpe_target}</span> : null}
+                    </span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={set.weight}
+                      disabled={set.logged}
+                      placeholder="lbs"
+                      className="bg-[#1C1C1E] border border-[#2C2C2E] rounded px-0.5 py-1 text-white font-barlow text-[11px] text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40 [color-scheme:dark]"
+                      onChange={e => updateSet(exIdx, setIdx, 'weight', e.target.value)}
+                    />
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={set.reps_done}
+                      disabled={set.logged}
+                      placeholder="reps"
+                      className="bg-[#1C1C1E] border border-[#2C2C2E] rounded px-0.5 py-1 text-white font-barlow text-[11px] text-center w-full focus:outline-none focus:border-[#C9A84C]/50 disabled:opacity-40 [color-scheme:dark]"
+                      onChange={e => updateSet(exIdx, setIdx, 'reps_done', e.target.value)}
+                    />
+                    <DarkSelect
+                      value={set.rpe_felt !== null && set.rpe_felt !== undefined ? String(set.rpe_felt) : ''}
+                      onChange={v => {
+                        const rpeVal = v ? parseFloat(v) : null
+                        if (set.logged) {
+                          supabase.from('session_sets').update({ rpe_actual: rpeVal }).eq('id', set.session_set_id)
+                          updateSet(exIdx, setIdx, 'rpe_felt', rpeVal)
+                        } else if (rpeVal !== null && set.weight !== '' && set.reps_done !== '') {
+                          autoLog(exIdx, setIdx, { rpe_felt: rpeVal })
+                        } else {
+                          updateSet(exIdx, setIdx, 'rpe_felt', rpeVal)
+                        }
+                      }}
+                      options={[{ value: '', label: '—' }, ...RPE_VALUES.map(v => ({ value: String(v), label: String(v) }))]}
+                      disabled={false}
+                      className="bg-[#1C1C1E] border border-[#2C2C2E] rounded py-1 text-white font-barlow text-[11px] text-center"
+                    />
+                  </div>
+                </div>
+              )
+            })}
+
+            {/* Log all sets */}
+            {ex.sets.some(s => !s.logged && s.weight !== '' && s.reps_done !== '') && (
+              <button
+                onClick={() => logAllSets(exIdx)}
+                className="w-full mt-1.5 py-1.5 rounded border border-[#C9A84C]/40 font-barlow text-[11px] text-[#C9A84C] hover:bg-[#C9A84C]/10 transition-colors"
+              >
+                ✓ Log All Sets
+              </button>
+            )}
+
+            {/* Add extra set */}
+            <button
+              onClick={() => addSet(exIdx)}
+              className="w-full mt-1 py-1 rounded font-barlow text-[10px] text-white/25 hover:text-white/50 hover:bg-white/[0.04] transition-colors"
+            >
+              + Add Set
+            </button>
+          </>
+        )}
+      </div>
+    )
+  }
 }
